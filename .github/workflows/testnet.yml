@@ -1,0 +1,52 @@
+name: Bybit Testnet Test
+
+on:
+  push:
+    branches: [main, claude/*]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+  BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
+  BYBIT_TESTNET: "true"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest tests/ -v --tb=short
+
+  testnet-scan:
+    name: Testnet Market Scan
+    runs-on: ubuntu-latest
+    needs: [lint, unit-tests]
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run market scan on testnet
+        run: python bot.py --scan
+      - name: Check positions
+        run: python bot.py --positions

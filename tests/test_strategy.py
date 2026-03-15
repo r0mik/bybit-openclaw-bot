@@ -13,11 +13,11 @@ def make_klines(n=200, start_price=50000):
     for i in range(n):
         o = prices[i]
         h = o + abs(np.random.normal(0, 30))
-        l = o - abs(np.random.normal(0, 30))
+        low = o - abs(np.random.normal(0, 30))
         c = o + np.random.normal(0, 20)
         v = abs(np.random.normal(1000, 200))
         turnover = v * o
-        klines.append([str(timestamps[i]), str(o), str(h), str(l), str(c), str(v), str(turnover)])
+        klines.append([str(timestamps[i]), str(o), str(h), str(low), str(c), str(v), str(turnover)])
     # Bybit returns reverse chronological
     klines.reverse()
     return klines

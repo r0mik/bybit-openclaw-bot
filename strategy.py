@@ -2,10 +2,8 @@
 
 import logging
 import pandas as pd
-import numpy as np
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
-from ta.volume import VolumeWeightedAveragePrice
 from config import Config
 
 logger = logging.getLogger(__name__)

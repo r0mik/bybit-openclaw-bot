@@ -136,7 +136,7 @@ def main():
     else:
         env = "TESTNET" if Config.BYBIT_TESTNET else "⚠️  MAINNET"
         print(f"\n  Bybit Trading Bot ({env})")
-        print(f"  Symbol scan: top 20 by volume")
+        print("  Symbol scan: top 20 by volume")
         print(f"  Strategy: RSI({Config.RSI_PERIOD}) + EMA({Config.EMA_FAST}/{Config.EMA_SLOW})")
         print(f"  Trade size: {Config.TRADE_QTY} | Leverage: {Config.LEVERAGE}x")
         print(f"  TP: {Config.TAKE_PROFIT_PCT}% | SL: {Config.STOP_LOSS_PCT}%")

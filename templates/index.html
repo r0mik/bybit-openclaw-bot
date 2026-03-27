@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bybit Trading Bot Dashboard</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --green: #3fb950;
+  --red: #f85149;
+  --blue: #58a6ff;
+  --yellow: #d29922;
+  --purple: #bc8cff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+a { color: var(--blue); text-decoration: none; }
+
+/* Layout */
+.header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header .env-badge { background: var(--yellow); color: #000; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+.header .wallet { font-size: 13px; color: var(--text-muted); }
+.header .wallet span { color: var(--green); font-weight: 600; }
+
+.container { display: grid; grid-template-columns: 1fr 380px; grid-template-rows: auto 1fr; gap: 1px; background: var(--border); height: calc(100vh - 49px); }
+.panel { background: var(--surface); overflow: auto; }
+.panel-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 13px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px; }
+
+/* Chart panel */
+.chart-panel { grid-column: 1; grid-row: 1 / 3; }
+.chart-toolbar { padding: 8px 16px; display: flex; gap: 8px; align-items: center; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.chart-toolbar select, .chart-toolbar input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+.chart-toolbar select { cursor: pointer; }
+.chart-toolbar .interval-btn { padding: 4px 12px; border-radius: 4px; cursor: pointer; background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 12px; }
+.chart-toolbar .interval-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+.signal-badge { padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.signal-badge.long { background: rgba(63,185,80,0.2); color: var(--green); }
+.signal-badge.short { background: rgba(248,81,73,0.2); color: var(--red); }
+.signal-badge.none { background: rgba(139,148,158,0.2); color: var(--text-muted); }
+#chart-container { width: 100%; height: calc(100vh - 49px - 45px - 41px); }
+.chart-click-hint { position: absolute; bottom: 16px; left: 16px; background: rgba(0,0,0,0.8); color: var(--text-muted); padding: 6px 12px; border-radius: 6px; font-size: 12px; z-index: 10; pointer-events: none; }
+
+/* Side panels */
+.side-panels { grid-column: 2; grid-row: 1 / 3; display: flex; flex-direction: column; }
+
+/* Tabs */
+.tabs { display: flex; border-bottom: 1px solid var(--border); }
+.tab { flex: 1; padding: 10px; text-align: center; font-size: 13px; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; }
+.tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+.tab-content { display: none; flex: 1; overflow: auto; }
+.tab-content.active { display: block; }
+
+/* Bot list */
+.bot-filters { padding: 8px 12px; display: flex; gap: 6px; border-bottom: 1px solid var(--border); }
+.bot-filters select, .bot-filters input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 12px; flex: 1; }
+.bot-card { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+.bot-card:hover { background: rgba(88,166,255,0.05); }
+.bot-card .bot-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.bot-card .bot-name { font-weight: 600; font-size: 14px; }
+.bot-card .bot-symbol { color: var(--blue); font-size: 13px; }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+.status-dot.running { background: var(--green); }
+.status-dot.stopped { background: var(--text-muted); }
+.status-dot.error { background: var(--red); }
+.bot-card .bot-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 12px; }
+.bot-actions { display: flex; gap: 4px; margin-top: 8px; }
+.btn { padding: 4px 12px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 12px; cursor: pointer; }
+.btn:hover { background: var(--bg); }
+.btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+.btn-primary:hover { opacity: 0.9; }
+.btn-danger { border-color: var(--red); color: var(--red); }
+.btn-danger:hover { background: rgba(248,81,73,0.1); }
+.btn-success { border-color: var(--green); color: var(--green); }
+.btn-success:hover { background: rgba(63,185,80,0.1); }
+
+/* Positions */
+.position-card { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.position-card .pos-top { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.position-card .pos-symbol { font-weight: 600; }
+.position-card .pos-side { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 3px; }
+.position-card .pos-side.Buy { background: rgba(63,185,80,0.2); color: var(--green); }
+.position-card .pos-side.Sell { background: rgba(248,81,73,0.2); color: var(--red); }
+.position-card .pos-details { font-size: 12px; color: var(--text-muted); display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.pnl-pos { color: var(--green); font-weight: 600; }
+.pnl-neg { color: var(--red); font-weight: 600; }
+
+/* Modal */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center; }
+.modal-overlay.show { display: flex; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 460px; max-height: 80vh; overflow: auto; }
+.modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.modal-header h2 { font-size: 16px; }
+.modal-close { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; }
+.modal-body { padding: 20px; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.form-group input, .form-group select { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 14px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.template-select { margin-bottom: 16px; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+.template-select label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; display: block; }
+.template-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.template-chip { padding: 4px 12px; border-radius: 16px; border: 1px solid var(--border); font-size: 12px; cursor: pointer; background: transparent; color: var(--text); }
+.template-chip:hover, .template-chip.active { border-color: var(--blue); color: var(--blue); background: rgba(88,166,255,0.1); }
+.modal-footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+.price-from-chart { font-size: 12px; color: var(--yellow); margin-top: 4px; }
+
+/* Empty state */
+.empty-state { padding: 40px 20px; text-align: center; color: var(--text-muted); }
+.empty-state p { margin: 8px 0; font-size: 13px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <h1>Bybit Trading Bot</h1>
+    <span class="env-badge" id="env-badge">TESTNET</span>
+  </div>
+  <div class="wallet">
+    Balance: <span id="wallet-balance">--</span> USDT
+    &nbsp;|&nbsp; Available: <span id="wallet-available">--</span> USDT
+    &nbsp;|&nbsp; PnL: <span id="wallet-pnl">--</span>
+  </div>
+</div>
+
+<!-- Main layout -->
+<div class="container">
+  <!-- Chart panel -->
+  <div class="panel chart-panel">
+    <div class="chart-toolbar">
+      <select id="symbol-select" style="width:140px;"></select>
+      <div style="display:flex;gap:4px;">
+        <button class="interval-btn" data-interval="1">1m</button>
+        <button class="interval-btn" data-interval="5">5m</button>
+        <button class="interval-btn active" data-interval="15">15m</button>
+        <button class="interval-btn" data-interval="60">1h</button>
+        <button class="interval-btn" data-interval="240">4h</button>
+        <button class="interval-btn" data-interval="D">1D</button>
+      </div>
+      <span class="signal-badge none" id="current-signal">No Signal</span>
+      <div style="flex:1;"></div>
+      <button class="btn btn-primary" onclick="openCreateBotModal()">+ New Bot</button>
+    </div>
+    <div style="position:relative;">
+      <div id="chart-container"></div>
+      <div class="chart-click-hint">Click on chart to set entry price for new bot</div>
+    </div>
+  </div>
+
+  <!-- Side panels -->
+  <div class="side-panels">
+    <div class="tabs">
+      <div class="tab active" data-tab="bots">Bots</div>
+      <div class="tab" data-tab="positions">Positions</div>
+      <div class="tab" data-tab="trades">Trades</div>
+    </div>
+
+    <!-- Bots tab -->
+    <div class="tab-content active" id="tab-bots">
+      <div class="bot-filters">
+        <select id="filter-status">
+          <option value="">All Status</option>
+          <option value="running">Running</option>
+          <option value="stopped">Stopped</option>
+          <option value="error">Error</option>
+        </select>
+        <input type="text" id="filter-symbol" placeholder="Filter symbol...">
+      </div>
+      <div id="bots-list"></div>
+    </div>
+
+    <!-- Positions tab -->
+    <div class="tab-content" id="tab-positions">
+      <div id="positions-list"></div>
+    </div>
+
+    <!-- Trades tab -->
+    <div class="tab-content" id="tab-trades">
+      <div id="trades-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Create Bot Modal -->
+<div class="modal-overlay" id="create-bot-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Create New Bot</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="template-select">
+        <label>Start from template</label>
+        <div class="template-chips" id="template-chips"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Bot Name</label>
+        <input type="text" id="bot-name" placeholder="My Bot">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Symbol</label>
+          <input type="text" id="bot-symbol" value="BTCUSDT">
+        </div>
+        <div class="form-group">
+          <label>Side</label>
+          <select id="bot-side">
+            <option value="">Auto (follow signal)</option>
+            <option value="long">Long Only</option>
+            <option value="short">Short Only</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Trade Qty</label>
+          <input type="number" id="bot-qty" value="0.001" step="0.001">
+        </div>
+        <div class="form-group">
+          <label>Leverage</label>
+          <input type="number" id="bot-leverage" value="5" min="1" max="100">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Take Profit %</label>
+          <input type="number" id="bot-tp" value="2.0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>Stop Loss %</label>
+          <input type="number" id="bot-sl" value="1.0" step="0.1">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>RSI Period</label>
+          <input type="number" id="bot-rsi-period" value="14">
+        </div>
+        <div class="form-group">
+          <label>Scan Interval (s)</label>
+          <input type="number" id="bot-interval" value="60">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>RSI Overbought</label>
+          <input type="number" id="bot-rsi-ob" value="70">
+        </div>
+        <div class="form-group">
+          <label>RSI Oversold</label>
+          <input type="number" id="bot-rsi-os" value="30">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>EMA Fast</label>
+          <input type="number" id="bot-ema-fast" value="9">
+        </div>
+        <div class="form-group">
+          <label>EMA Slow</label>
+          <input type="number" id="bot-ema-slow" value="21">
+        </div>
+      </div>
+
+      <div id="chart-price-info" class="price-from-chart" style="display:none;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitCreateBot()">Create Bot</button>
+      <button class="btn btn-success" onclick="submitCreateAndStart()">Create &amp; Start</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let currentSymbol = 'BTCUSDT';
+let currentInterval = '15';
+let chart = null;
+let candleSeries = null;
+let volumeSeries = null;
+let emaFastSeries = null;
+let emaSlowSeries = null;
+let clickedPrice = null;
+let templates = [];
+const socket = io();
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+  initChart();
+  loadSymbols();
+  loadWallet();
+  loadBots();
+  loadPositions();
+  loadTrades();
+  loadTemplates();
+
+  // Refresh every 30s
+  setInterval(loadPositions, 30000);
+  setInterval(loadWallet, 60000);
+  setInterval(() => loadChart(currentSymbol, currentInterval), 30000);
+
+  // Tab switching
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  // Interval buttons
+  document.querySelectorAll('.interval-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentInterval = btn.dataset.interval;
+      loadChart(currentSymbol, currentInterval);
+    });
+  });
+
+  // Symbol select
+  document.getElementById('symbol-select').addEventListener('change', (e) => {
+    currentSymbol = e.target.value;
+    loadChart(currentSymbol, currentInterval);
+  });
+
+  // Bot filters
+  document.getElementById('filter-status').addEventListener('change', loadBots);
+  document.getElementById('filter-symbol').addEventListener('input', debounce(loadBots, 300));
+});
+
+// ---------------------------------------------------------------------------
+// Chart
+// ---------------------------------------------------------------------------
+function initChart() {
+  const container = document.getElementById('chart-container');
+  chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth,
+    height: container.clientHeight || 600,
+    layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e' },
+    grid: { vertLines: { color: '#1c2128' }, horzLines: { color: '#1c2128' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#30363d' },
+    timeScale: { borderColor: '#30363d', timeVisible: true },
+  });
+
+  candleSeries = chart.addCandlestickSeries({
+    upColor: '#3fb950', downColor: '#f85149',
+    borderUpColor: '#3fb950', borderDownColor: '#f85149',
+    wickUpColor: '#3fb950', wickDownColor: '#f85149',
+  });
+
+  volumeSeries = chart.addHistogramSeries({
+    color: '#58a6ff',
+    priceFormat: { type: 'volume' },
+    priceScaleId: '',
+  });
+  volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+
+  emaFastSeries = chart.addLineSeries({ color: '#d29922', lineWidth: 1, title: 'EMA Fast' });
+  emaSlowSeries = chart.addLineSeries({ color: '#bc8cff', lineWidth: 1, title: 'EMA Slow' });
+
+  // Click handler for price selection
+  chart.subscribeClick((param) => {
+    if (!param.point || !param.time) return;
+    const price = candleSeries.coordinateToPrice(param.point.y);
+    if (price && price > 0) {
+      clickedPrice = Math.round(price * 100) / 100;
+      document.querySelector('.chart-click-hint').textContent = `Selected price: $${clickedPrice} - Click "+ New Bot" to use`;
+    }
+  });
+
+  new ResizeObserver(() => {
+    chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+  }).observe(container);
+
+  loadChart(currentSymbol, currentInterval);
+}
+
+async function loadChart(symbol, interval) {
+  try {
+    const res = await fetch(`/api/market/klines/${symbol}?interval=${interval}&limit=500`);
+    const data = await res.json();
+    if (data.error) return;
+
+    candleSeries.setData(data.candles);
+    volumeSeries.setData(data.candles.map(c => ({
+      time: c.time,
+      value: c.volume,
+      color: c.close >= c.open ? 'rgba(63,185,80,0.3)' : 'rgba(248,81,73,0.3)',
+    })));
+
+    if (data.indicators.ema_fast) emaFastSeries.setData(data.indicators.ema_fast);
+    if (data.indicators.ema_slow) emaSlowSeries.setData(data.indicators.ema_slow);
+
+    // Update signal badge
+    const badge = document.getElementById('current-signal');
+    if (data.signal === 'long') {
+      badge.className = 'signal-badge long';
+      badge.textContent = 'LONG Signal';
+    } else if (data.signal === 'short') {
+      badge.className = 'signal-badge short';
+      badge.textContent = 'SHORT Signal';
+    } else {
+      badge.className = 'signal-badge none';
+      badge.textContent = 'No Signal';
+    }
+
+    chart.timeScale().fitContent();
+  } catch (e) {
+    console.error('Chart load error:', e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Symbols
+// ---------------------------------------------------------------------------
+async function loadSymbols() {
+  try {
+    const res = await fetch('/api/market/symbols');
+    const symbols = await res.json();
+    const select = document.getElementById('symbol-select');
+    select.innerHTML = '';
+    symbols.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      if (s === currentSymbol) opt.selected = true;
+      select.appendChild(opt);
+    });
+  } catch (e) {}
+}
+
+// ---------------------------------------------------------------------------
+// Wallet
+// ---------------------------------------------------------------------------
+async function loadWallet() {
+  try {
+    const res = await fetch('/api/wallet');
+    const data = await res.json();
+    if (data.error) return;
+    document.getElementById('wallet-balance').textContent = parseFloat(data.balance).toFixed(2);
+    document.getElementById('wallet-available').textContent = parseFloat(data.available).toFixed(2);
+    const pnl = parseFloat(data.unrealised_pnl);
+    const pnlEl = document.getElementById('wallet-pnl');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(4) + ' USDT';
+    pnlEl.className = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+  } catch (e) {}
+}
+
+// ---------------------------------------------------------------------------
+// Bots
+// ---------------------------------------------------------------------------
+async function loadBots() {
+  const status = document.getElementById('filter-status').value;
+  const symbol = document.getElementById('filter-symbol').value;
+  let url = '/api/bots?';
+  if (status) url += `status=${status}&`;
+  if (symbol) url += `symbol=${symbol}&`;
+
+  try {
+    const res = await fetch(url);
+    const bots = await res.json();
+    const container = document.getElementById('bots-list');
+
+    if (!bots.length) {
+      container.innerHTML = '<div class="empty-state"><p>No bots yet</p><p>Click "+ New Bot" or click on the chart to create one</p></div>';
+      return;
+    }
+
+    container.innerHTML = bots.map(b => `
+      <div class="bot-card" onclick="selectBotSymbol('${b.symbol}')">
+        <div class="bot-top">
+          <div>
+            <span class="status-dot ${b.status}"></span>
+            <span class="bot-name">${esc(b.name)}</span>
+          </div>
+          <span class="bot-symbol">${b.symbol}</span>
+        </div>
+        <div class="bot-meta">
+          <span>Qty: ${b.trade_qty}</span>
+          <span>Lev: ${b.leverage}x</span>
+          <span>TP: ${b.take_profit_pct}%</span>
+          <span>SL: ${b.stop_loss_pct}%</span>
+        </div>
+        ${b.error_message ? `<div style="color:var(--red);font-size:12px;margin-top:4px;">${esc(b.error_message)}</div>` : ''}
+        <div class="bot-actions">
+          ${b.status === 'running'
+            ? `<button class="btn btn-danger" onclick="event.stopPropagation();stopBot(${b.id})">Stop</button>`
+            : `<button class="btn btn-success" onclick="event.stopPropagation();startBot(${b.id})">Start</button>`}
+          <button class="btn btn-danger" onclick="event.stopPropagation();deleteBot(${b.id})">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {}
+}
+
+function selectBotSymbol(symbol) {
+  currentSymbol = symbol;
+  document.getElementById('symbol-select').value = symbol;
+  loadChart(symbol, currentInterval);
+}
+
+async function startBot(id) {
+  await fetch(`/api/bots/${id}/start`, { method: 'POST' });
+  loadBots();
+}
+
+async function stopBot(id) {
+  await fetch(`/api/bots/${id}/stop`, { method: 'POST' });
+  loadBots();
+}
+
+async function deleteBot(id) {
+  if (!confirm('Delete this bot?')) return;
+  await fetch(`/api/bots/${id}`, { method: 'DELETE' });
+  loadBots();
+}
+
+// ---------------------------------------------------------------------------
+// Positions
+// ---------------------------------------------------------------------------
+async function loadPositions() {
+  try {
+    const res = await fetch('/api/positions');
+    const positions = await res.json();
+    const container = document.getElementById('positions-list');
+
+    if (!positions.length || positions.error) {
+      container.innerHTML = '<div class="empty-state"><p>No open positions</p></div>';
+      return;
+    }
+
+    container.innerHTML = positions.map(p => {
+      const pnl = parseFloat(p.unrealised_pnl);
+      return `
+        <div class="position-card" onclick="selectBotSymbol('${p.symbol}')">
+          <div class="pos-top">
+            <span class="pos-symbol">${p.symbol}</span>
+            <span class="pos-side ${p.side}">${p.side}</span>
+          </div>
+          <div class="pos-details">
+            <span>Size: ${p.size}</span>
+            <span>Entry: ${p.entry_price}</span>
+            <span>Mark: ${p.mark_price}</span>
+            <span>Liq: ${p.liq_price || '--'}</span>
+            <span>TP: ${p.take_profit || '--'}</span>
+            <span>SL: ${p.stop_loss || '--'}</span>
+          </div>
+          <div style="margin-top:6px;">
+            PnL: <span class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} USDT</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {}
+}
+
+// ---------------------------------------------------------------------------
+// Trades
+// ---------------------------------------------------------------------------
+async function loadTrades() {
+  try {
+    const res = await fetch('/api/trades');
+    const trades = await res.json();
+    const container = document.getElementById('trades-list');
+
+    if (!trades.length) {
+      container.innerHTML = '<div class="empty-state"><p>No trades recorded yet</p><p>Trades will appear when bots execute orders</p></div>';
+      return;
+    }
+
+    container.innerHTML = trades.map(t => `
+      <div class="position-card">
+        <div class="pos-top">
+          <span class="pos-symbol">${t.symbol}</span>
+          <span class="pos-side ${t.side}">${t.side}</span>
+        </div>
+        <div class="pos-details">
+          <span>Qty: ${t.qty}</span>
+          <span>Entry: ${t.entry_price || '--'}</span>
+          <span>Score: ${t.signal_score || '--'}</span>
+          <span>Status: ${t.status}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${t.opened_at}</div>
+      </div>
+    `).join('');
+  } catch (e) {}
+}
+
+// ---------------------------------------------------------------------------
+// Templates
+// ---------------------------------------------------------------------------
+async function loadTemplates() {
+  try {
+    const res = await fetch('/api/templates');
+    templates = await res.json();
+    renderTemplateChips();
+  } catch (e) {}
+}
+
+function renderTemplateChips() {
+  const container = document.getElementById('template-chips');
+  container.innerHTML = templates.map(t => `
+    <button class="template-chip" onclick="applyTemplate(${t.id})">${esc(t.name)}</button>
+  `).join('');
+}
+
+function applyTemplate(id) {
+  const t = templates.find(x => x.id === id);
+  if (!t) return;
+
+  document.querySelectorAll('.template-chip').forEach(c => c.classList.remove('active'));
+  event.target.classList.add('active');
+
+  document.getElementById('bot-qty').value = t.trade_qty;
+  document.getElementById('bot-leverage').value = t.leverage;
+  document.getElementById('bot-tp').value = t.take_profit_pct;
+  document.getElementById('bot-sl').value = t.stop_loss_pct;
+  document.getElementById('bot-rsi-period').value = t.rsi_period;
+  document.getElementById('bot-rsi-ob').value = t.rsi_overbought;
+  document.getElementById('bot-rsi-os').value = t.rsi_oversold;
+  document.getElementById('bot-ema-fast').value = t.ema_fast;
+  document.getElementById('bot-ema-slow').value = t.ema_slow;
+  document.getElementById('bot-interval').value = t.scan_interval;
+}
+
+// ---------------------------------------------------------------------------
+// Create Bot Modal
+// ---------------------------------------------------------------------------
+function openCreateBotModal() {
+  const symbol = currentSymbol;
+  document.getElementById('bot-symbol').value = symbol;
+  document.getElementById('bot-name').value = `Bot-${symbol}`;
+
+  const priceInfo = document.getElementById('chart-price-info');
+  if (clickedPrice) {
+    priceInfo.style.display = 'block';
+    priceInfo.textContent = `Entry price from chart: $${clickedPrice}`;
+  } else {
+    priceInfo.style.display = 'none';
+  }
+
+  document.getElementById('create-bot-modal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('create-bot-modal').classList.remove('show');
+  clickedPrice = null;
+}
+
+function getBotFormData() {
+  return {
+    name: document.getElementById('bot-name').value || `Bot-${document.getElementById('bot-symbol').value}`,
+    symbol: document.getElementById('bot-symbol').value.toUpperCase(),
+    side: document.getElementById('bot-side').value || null,
+    trade_qty: parseFloat(document.getElementById('bot-qty').value),
+    leverage: parseInt(document.getElementById('bot-leverage').value),
+    take_profit_pct: parseFloat(document.getElementById('bot-tp').value),
+    stop_loss_pct: parseFloat(document.getElementById('bot-sl').value),
+    rsi_period: parseInt(document.getElementById('bot-rsi-period').value),
+    rsi_overbought: parseFloat(document.getElementById('bot-rsi-ob').value),
+    rsi_oversold: parseFloat(document.getElementById('bot-rsi-os').value),
+    ema_fast: parseInt(document.getElementById('bot-ema-fast').value),
+    ema_slow: parseInt(document.getElementById('bot-ema-slow').value),
+    scan_interval: parseInt(document.getElementById('bot-interval').value),
+  };
+}
+
+async function submitCreateBot() {
+  const data = getBotFormData();
+  const res = await fetch('/api/bots', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (res.ok) {
+    closeModal();
+    loadBots();
+  }
+}
+
+async function submitCreateAndStart() {
+  const data = getBotFormData();
+  const res = await fetch('/api/bots', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (res.ok) {
+    const bot = await res.json();
+    await fetch(`/api/bots/${bot.id}/start`, { method: 'POST' });
+    closeModal();
+    loadBots();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket events
+// ---------------------------------------------------------------------------
+socket.on('bot_update', (data) => {
+  // Could update UI in real-time
+  loadBots();
+});
+
+socket.on('new_trade', (data) => {
+  loadTrades();
+  loadPositions();
+});
+
+// ---------------------------------------------------------------------------
+// Utils
+// ---------------------------------------------------------------------------
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+</script>
+</body>
+</html>

@@ -13,7 +13,7 @@ const SS := 2        # supersampling factor
 const RAW := "res://.render/"
 const TEAMS := [Color(0.27, 0.57, 1.0), Color(0.94, 0.29, 0.23)]
 const DIRS := 16
-const UNIT_FRAME := {"worker": 48, "marine": 48, "tank": 80}
+const UNIT_FRAME := {"worker": 48, "marine": 48, "tank": 80, "wraith": 88}
 const MINERAL_FRAME := 64
 const MARGIN := 24
 

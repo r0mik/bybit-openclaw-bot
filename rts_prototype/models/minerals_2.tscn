@@ -1,6 +1,6 @@
 [gd_scene load_steps=7 format=3]
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_foj7x"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8ouri"]
 albedo_color = Color(0.35, 0.8, 1, 1)
 metallic_specular = 1.0
 roughness = 0.12
@@ -10,35 +10,35 @@ emission_energy_multiplier = 0.7
 rim_enabled = true
 rim = 0.8
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_6g5f4"]
+[sub_resource type="CylinderMesh" id="CylinderMesh_1dbsu"]
 top_radius = 0.02
 bottom_radius = 0.324769
 height = 1.90574
 radial_segments = 6
 rings = 1
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_o2c5w"]
+[sub_resource type="CylinderMesh" id="CylinderMesh_gfqr2"]
 top_radius = 0.02
 bottom_radius = 0.414093
 height = 2.14086
 radial_segments = 6
 rings = 1
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_2uq4t"]
+[sub_resource type="CylinderMesh" id="CylinderMesh_nv4qu"]
 top_radius = 0.02
 bottom_radius = 0.376919
 height = 1.57746
 radial_segments = 6
 rings = 1
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_2ajyk"]
+[sub_resource type="CylinderMesh" id="CylinderMesh_10ypo"]
 top_radius = 0.02
 bottom_radius = 0.442034
 height = 1.95361
 radial_segments = 6
 rings = 1
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_0hliy"]
+[sub_resource type="CylinderMesh" id="CylinderMesh_1glf3"]
 top_radius = 0.02
 bottom_radius = 0.417791
 height = 1.93001
@@ -47,42 +47,42 @@ rings = 1
 
 [node name="Minerals2" type="Node3D"]
 
-[node name="@Node3D@355" type="Node3D" parent="."]
+[node name="@Node3D@609" type="Node3D" parent="."]
 transform = Transform3D(-0.800326, 0.078121, -0.594454, 0.34022, 0.875564, -0.342983, 0.493688, -0.476743, -0.727315, -1.05101, 0, 0.697158)
 
-[node name="@MeshInstance3D@356" type="MeshInstance3D" parent="@Node3D@355"]
+[node name="@MeshInstance3D@610" type="MeshInstance3D" parent="@Node3D@609"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.802871, 0)
-material_override = SubResource("StandardMaterial3D_foj7x")
-mesh = SubResource("CylinderMesh_6g5f4")
+material_override = SubResource("StandardMaterial3D_8ouri")
+mesh = SubResource("CylinderMesh_1dbsu")
 
-[node name="@Node3D@357" type="Node3D" parent="."]
+[node name="@Node3D@611" type="Node3D" parent="."]
 transform = Transform3D(-0.042079, -0.354541, -0.934093, 0.0752731, 0.931139, -0.35681, 0.996275, -0.0853263, -0.012494, 0.928313, 0, -0.320854)
 
-[node name="@MeshInstance3D@358" type="MeshInstance3D" parent="@Node3D@357"]
+[node name="@MeshInstance3D@612" type="MeshInstance3D" parent="@Node3D@611"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.920431, 0)
-material_override = SubResource("StandardMaterial3D_foj7x")
-mesh = SubResource("CylinderMesh_o2c5w")
+material_override = SubResource("StandardMaterial3D_8ouri")
+mesh = SubResource("CylinderMesh_gfqr2")
 
-[node name="@Node3D@359" type="Node3D" parent="."]
+[node name="@Node3D@613" type="Node3D" parent="."]
 transform = Transform3D(-0.532413, -0.368999, 0.761824, -0.185647, 0.928976, 0.320218, -0.825876, 0.0290578, -0.563103, 0.280089, 0, -0.278957)
 
-[node name="@MeshInstance3D@360" type="MeshInstance3D" parent="@Node3D@359"]
+[node name="@MeshInstance3D@614" type="MeshInstance3D" parent="@Node3D@613"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.638728, 0)
-material_override = SubResource("StandardMaterial3D_foj7x")
-mesh = SubResource("CylinderMesh_2uq4t")
+material_override = SubResource("StandardMaterial3D_8ouri")
+mesh = SubResource("CylinderMesh_nv4qu")
 
-[node name="@Node3D@361" type="Node3D" parent="."]
+[node name="@Node3D@615" type="Node3D" parent="."]
 transform = Transform3D(-0.805305, 0.121264, 0.580327, 0.0990611, 0.99262, -0.0699506, -0.584527, 0.00115632, -0.811374, 1.03273, 0, 0.477056)
 
-[node name="@MeshInstance3D@362" type="MeshInstance3D" parent="@Node3D@361"]
+[node name="@MeshInstance3D@616" type="MeshInstance3D" parent="@Node3D@615"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.826804, 0)
-material_override = SubResource("StandardMaterial3D_foj7x")
-mesh = SubResource("CylinderMesh_2ajyk")
+material_override = SubResource("StandardMaterial3D_8ouri")
+mesh = SubResource("CylinderMesh_10ypo")
 
-[node name="@Node3D@363" type="Node3D" parent="."]
+[node name="@Node3D@617" type="Node3D" parent="."]
 transform = Transform3D(0.0509427, -0.224863, -0.973058, 0.228084, 0.951193, -0.207869, 0.972308, -0.21135, 0.0997441, -0.988316, 0, 0.184416)
 
-[node name="@MeshInstance3D@364" type="MeshInstance3D" parent="@Node3D@363"]
+[node name="@MeshInstance3D@618" type="MeshInstance3D" parent="@Node3D@617"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.815005, 0)
-material_override = SubResource("StandardMaterial3D_foj7x")
-mesh = SubResource("CylinderMesh_0hliy")
+material_override = SubResource("StandardMaterial3D_8ouri")
+mesh = SubResource("CylinderMesh_1glf3")

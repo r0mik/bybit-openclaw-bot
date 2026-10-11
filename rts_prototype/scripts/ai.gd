@@ -8,6 +8,7 @@ var team := 1
 var think_timer := 1.0
 var wave_size := 6
 var elapsed := 0.0
+var reserve := 0  # minerals held back for the next planned building
 
 
 func _process(delta: float) -> void:
@@ -69,12 +70,25 @@ func _economy(cc, workers: Array, buildings: Array) -> void:
 		return  # save up for the depot
 	if workers.size() + cc.queue.size() < 18 and cc.queue.is_empty():
 		game.try_train(cc, "worker")
+	# Tech/defence build order: first entry whose conditions hold gets built.
 	var rax := _count("barracks", buildings, workers)
-	if rax < 3 and elapsed > 25.0 + rax * 70.0 and game.bank[team] >= 150:
-		_build("barracks", cc, workers)
-	elif _count("factory", buildings, workers) == 0 and elapsed > 160.0 \
-			and game.has_completed(team, "barracks") and game.bank[team] >= 200:
-		_build("factory", cc, workers)
+	var plan := [
+		["barracks", rax < 3 and elapsed > 25.0 + rax * 70.0],
+		["bunker", _count("bunker", buildings, workers) < 1 and elapsed > 110.0 and game.has_completed(team, "barracks")],
+		["factory", _count("factory", buildings, workers) == 0 and elapsed > 160.0 and game.has_completed(team, "barracks")],
+		["ebay", _count("ebay", buildings, workers) == 0 and elapsed > 200.0],
+		["turret", _count("turret", buildings, workers) < 2 and game.has_completed(team, "ebay")],
+		["starport", _count("starport", buildings, workers) == 0 and elapsed > 280.0 and game.has_completed(team, "factory")],
+	]
+	reserve = 0
+	for entry in plan:
+		if entry[1]:
+			var cost: int = Defs.BUILDINGS[entry[0]].cost
+			if game.bank[team] >= cost:
+				_build(entry[0], cc, workers)
+			else:
+				reserve = cost
+			break
 
 
 func _build(kind: String, cc, workers: Array) -> bool:
@@ -95,9 +109,11 @@ func _build(kind: String, cc, workers: Array) -> bool:
 
 func _find_spot(kind: String, center: Vector2):
 	var toward: Vector2 = (game.map_size / 2.0 - center).normalized()
-	for i in 60:
-		var ang := randf_range(-1.6, 1.6)
-		var dist := randf_range(170.0, 430.0)
+	var defensive: bool = kind == "bunker" or kind == "turret"
+	for i in 120:
+		var ang := randf_range(-0.6, 0.6) if defensive else randf_range(-1.6, 1.6)
+		var far := i / 40 * 120.0  # widen the search ring when the base gets crowded
+		var dist := randf_range(380.0, 520.0) if defensive else randf_range(170.0, 430.0 + far)
 		var p: Vector2 = game.snap(center + toward.rotated(ang) * dist)
 		if game.can_place(kind, p, 45.0):  # leave walkways between AI buildings
 			return p
@@ -106,12 +122,17 @@ func _find_spot(kind: String, center: Vector2):
 
 func _military(cc, army: Array, buildings: Array) -> void:
 	for b in buildings:
-		if not b.is_complete():
+		if not b.is_complete() or game.bank[team] - reserve < 50:
 			continue
 		if b.kind == "barracks" and b.queue.size() < 2:
 			game.try_train(b, "marine")
 		elif b.kind == "factory" and b.queue.size() < 1:
 			game.try_train(b, "tank")
+		elif b.kind == "starport" and b.queue.size() < 1:
+			game.try_train(b, "wraith")
+		elif b.kind == "ebay" and b.queue.is_empty() and game.bank[team] >= 250:
+			if not game.try_research(b, "weapons"):
+				game.try_research(b, "armor")
 	if army.is_empty():
 		return
 	var home: Vector2 = cc.position if cc != null else army[0].position

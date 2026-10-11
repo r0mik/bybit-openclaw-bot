@@ -16,6 +16,7 @@ const TEAM_COLORS := [Color(0.25, 0.55, 1.0), Color(0.95, 0.28, 0.22)]
 
 var map_size := MAP_SIZE
 var bank := [50, 50]
+var upgrades := [{"weapons": 0, "armor": 0}, {"weapons": 0, "armor": 0}]
 var entities: Node2D
 var overlay: Node2D
 var camera: Camera2D
@@ -238,7 +239,7 @@ func find_enemy(u, radius: float):
 	var best = null
 	var best_score := INF
 	for e in get_tree().get_nodes_in_group("units"):
-		if e.team == u.team or not e.is_alive():
+		if e.team == u.team or not e.is_alive() or not u.can_target(e):
 			continue
 		var d := edge_dist(u, e)
 		if d <= radius:
@@ -278,8 +279,9 @@ func supply_used(t: int) -> int:
 	for u in team_units(t):
 		n += int(u.stats.supply)
 	for b in team_buildings(t):
-		for uk in b.queue:
-			n += int(Defs.UNITS[uk].supply)
+		for item in b.queue:
+			if Defs.UNITS.has(item):
+				n += int(Defs.UNITS[item].supply)
 	return n
 
 
@@ -309,6 +311,8 @@ func can_place(kind: String, pos: Vector2, margin := 6.0) -> bool:
 
 ## Simple obstacle avoidance: slide along buildings and around mineral patches.
 func steer_around(u, dir: Vector2, goal: Vector2) -> Vector2:
+	if u.is_air():
+		return dir
 	var ahead: Vector2 = u.position + dir * (u.radius + 14.0)
 	for b in get_tree().get_nodes_in_group("buildings"):
 		var r: Rect2 = b.rect().grow(u.radius + 1.0)
@@ -357,7 +361,54 @@ func try_train(b, uk: String) -> bool:
 		return false
 	bank[b.team] -= st.cost
 	b.queue.append(uk)
+	b.queue_costs.append(st.cost)
 	return true
+
+
+## Next research level for a team, counting research already in progress.
+func upgrade_level(t: int, key: String) -> int:
+	var n: int = upgrades[t][key]
+	for b in team_buildings(t):
+		if b.is_researching(key):
+			n += 1
+	return n
+
+
+func upgrade_cost(t: int, key: String) -> int:
+	var lvl := upgrade_level(t, key)
+	var costs: Array = Defs.UPGRADES[key].cost
+	return costs[mini(lvl, costs.size() - 1)]
+
+
+func try_research(b, key: String) -> bool:
+	var up: Dictionary = Defs.UPGRADES[key]
+	if not b.can_research(key):
+		return false
+	if upgrade_level(b.team, key) >= up.max:
+		if b.team == PLAYER:
+			show_message("%s: максимальный уровень" % up.name)
+		return false
+	var cost := upgrade_cost(b.team, key)
+	if bank[b.team] < cost:
+		if b.team == PLAYER:
+			show_message("Недостаточно минералов")
+		return false
+	bank[b.team] -= cost
+	b.queue.append(key)
+	b.queue_costs.append(cost)
+	return true
+
+
+func complete_upgrade(t: int, key: String) -> void:
+	upgrades[t][key] += 1
+	if t == PLAYER:
+		show_message("Исследование завершено: %s +%d" % [Defs.UPGRADES[key].name, upgrades[t][key]])
+
+
+func item_name(item: String) -> String:
+	if Defs.UPGRADES.has(item):
+		return "%s +%d" % [Defs.UPGRADES[item].name, upgrades[PLAYER][item] + 1]
+	return Defs.UNITS[item].name
 
 
 func try_order_build(w, kind: String, pos: Vector2) -> bool:
@@ -394,16 +445,23 @@ func on_building_complete(b) -> void:
 		show_message("%s построен" % b.stats.name)
 
 
+## Weapons upgrades add 20% damage per level, armour removes a flat 1.5 per level.
+func scaled_damage(attacker, target, dmg: float) -> float:
+	var w: int = upgrades[attacker.team].weapons
+	var a: int = upgrades[target.team].armor
+	return maxf(dmg * (1.0 + 0.2 * w) - a * 1.5, dmg * 0.4)
+
+
 func deal_damage(attacker, target, dmg: float, splash: float) -> void:
 	if splash > 0.0:
 		var center: Vector2 = target.position
 		effects.append({"pos": center, "t": 0.0, "r": splash, "color": Color(1.0, 0.6, 0.2)})
 		var all: Array = get_tree().get_nodes_in_group("units") + get_tree().get_nodes_in_group("buildings")
 		for e in all:
-			if e.team != attacker.team and e.is_alive() and e.surface_distance(center) <= splash:
-				e.take_damage(dmg if e == target else dmg * 0.5, attacker)
+			if e.team != attacker.team and e.is_alive() and attacker.can_target(e) and e.surface_distance(center) <= splash:
+				e.take_damage(scaled_damage(attacker, e, dmg if e == target else dmg * 0.5), attacker)
 	else:
-		target.take_damage(dmg, attacker)
+		target.take_damage(scaled_damage(attacker, target, dmg), attacker)
 
 
 func kill(e) -> void:
@@ -461,6 +519,18 @@ func get_commands() -> Array:
 			var st: Dictionary = Defs.UNITS[uk]
 			cmds.append({"key": st.hotkey, "label": "%s (%s) %d" % [st.name, OS.get_keycode_string(st.hotkey), st.cost],
 				"fn": func(): train_selected(uk)})
+		var research := []
+		for b in blds:
+			for key in b.stats.get("research", []):
+				if not key in research:
+					research.append(key)
+		for key in research:
+			var up: Dictionary = Defs.UPGRADES[key]
+			var lvl := upgrade_level(PLAYER, key)
+			var label := "%s +%d (%s) %d" % [up.name, lvl + 1, OS.get_keycode_string(up.hotkey), upgrade_cost(PLAYER, key)]
+			if lvl >= up.max:
+				label = "%s: макс." % up.name
+			cmds.append({"key": up.hotkey, "label": label, "fn": func(): research_selected(key)})
 		if blds.any(func(b): return not b.queue.is_empty()):
 			cmds.append({"key": KEY_X, "label": "Отмена (X)", "fn": cmd_cancel})
 	return cmds
@@ -485,6 +555,13 @@ func cmd_cancel() -> void:
 	for b in selected_buildings():
 		if not b.queue.is_empty():
 			b.cancel_last()
+			return
+
+
+func research_selected(key: String) -> void:
+	for b in selected_buildings():
+		if b.can_research(key):
+			try_research(b, key)
 			return
 
 
@@ -807,7 +884,7 @@ func _resolve_collisions() -> void:
 					for o in cell:
 						if o == u or o.get_instance_id() < u.get_instance_id() or not o.is_alive():
 							continue
-						if o.is_worker() and o.is_mining():
+						if (o.is_worker() and o.is_mining()) or o.is_air() != u.is_air():
 							continue
 						var diff: Vector2 = u.position - o.position
 						var min_d: float = u.radius + o.radius
@@ -817,6 +894,9 @@ func _resolve_collisions() -> void:
 							var push := (min_d - d) * 0.5
 							u.position += n * push
 							o.position -= n * push
+		if u.is_air():
+			u.position = u.position.clamp(Vector2(10, 10), MAP_SIZE - Vector2(10, 10))
+			continue
 		for b in get_tree().get_nodes_in_group("buildings"):
 			var r: Rect2 = b.rect().grow(u.radius)
 			if r.has_point(u.position):

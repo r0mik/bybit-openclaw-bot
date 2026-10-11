@@ -12,11 +12,19 @@ var max_hp := 1.0
 var size := Vector2(100, 100)
 var constructing := false
 var build_progress := 0.0
-var queue: Array = []
+var queue: Array = []          # unit kinds or upgrade keys
+var queue_costs: Array = []    # minerals paid for each queue entry (refunded on cancel)
 var prod_progress := 0.0
 var rally := Vector2.ZERO
 var has_rally := false
 var selected := false
+var radius := 0.0
+# static defence (Bunker, Missile Turret)
+var target = null
+var cooldown_left := 0.0
+var acquire_timer := 0.0
+var shot_flash := 0.0
+var shot_to := Vector2.ZERO
 
 
 func setup(g, t: int, k: String, under_construction: bool) -> void:
@@ -26,6 +34,7 @@ func setup(g, t: int, k: String, under_construction: bool) -> void:
 	stats = Defs.BUILDINGS[k]
 	max_hp = stats.hp
 	size = stats.size
+	radius = minf(size.x, size.y) / 2.0
 	constructing = under_construction
 	hp = max_hp * 0.1 if constructing else max_hp
 	add_to_group("buildings")
@@ -47,8 +56,24 @@ func surface_distance(p: Vector2) -> float:
 	return game.rect_point_dist(rect(), p)
 
 
+func is_air() -> bool:
+	return false
+
+
+func can_target(_e) -> bool:
+	return true
+
+
 func can_train(uk: String) -> bool:
 	return not constructing and uk in stats.trains and queue.size() < 5
+
+
+func can_research(key: String) -> bool:
+	return not constructing and key in stats.get("research", []) and queue.is_empty()
+
+
+func is_researching(key: String) -> bool:
+	return key in queue
 
 
 func take_damage(amount: float, _attacker) -> void:
@@ -62,8 +87,8 @@ func take_damage(amount: float, _attacker) -> void:
 func cancel_last() -> void:
 	if queue.is_empty():
 		return
-	var uk: String = queue.pop_back()
-	game.refund(team, Defs.UNITS[uk].cost)
+	queue.pop_back()
+	game.refund(team, queue_costs.pop_back())
 	if queue.is_empty():
 		prod_progress = 0.0
 
@@ -78,13 +103,39 @@ func _process(delta: float) -> void:
 			constructing = false
 			game.on_building_complete(self)
 	elif not queue.is_empty():
-		var uk: String = queue[0]
-		prod_progress += delta / Defs.UNITS[uk].time
+		var item: String = queue[0]
+		var is_upgrade := Defs.UPGRADES.has(item)
+		var t: float = Defs.UPGRADES[item].time if is_upgrade else Defs.UNITS[item].time
+		prod_progress += delta / t
 		if prod_progress >= 1.0:
 			prod_progress = 0.0
 			queue.pop_front()
-			_spawn(uk)
+			queue_costs.pop_front()
+			if is_upgrade:
+				game.complete_upgrade(team, item)
+			else:
+				_spawn(item)
+	if not constructing and stats.has("damage"):
+		_defend(delta)
 	queue_redraw()
+
+
+## Static defence: shoot the nearest enemy in range.
+func _defend(delta: float) -> void:
+	cooldown_left = maxf(0.0, cooldown_left - delta)
+	shot_flash = maxf(0.0, shot_flash - delta)
+	acquire_timer -= delta
+	if not game.valid(target) or game.edge_dist(self, target) > stats.range:
+		target = null
+		if acquire_timer <= 0.0:
+			acquire_timer = 0.3
+			target = game.find_enemy(self, stats.range)
+	if target != null and cooldown_left <= 0.0:
+		cooldown_left = stats.cooldown
+		shot_flash = 0.1
+		shot_to = target.position
+		var dmg: float = stats.damage * (stats.get("air_bonus", 1.0) if target.is_air() else 1.0)
+		game.deal_damage(self, target, dmg, 0.0)
 
 
 func _spawn(uk: String) -> void:
@@ -133,6 +184,12 @@ func _draw() -> void:
 	else:
 		draw_texture_rect(tex, full, false)
 	_draw_damage(top)
+	if shot_flash > 0.0:
+		var muzzle := Vector2(0, -top * 0.75)
+		var hit := to_local(shot_to) + Vector2(0, -6.0)
+		var col := Color(1.0, 0.55, 0.2) if kind == "turret" else Color(1.0, 0.95, 0.5)
+		draw_line(muzzle, hit, col, 2.5 if kind == "turret" else 1.5)
+		draw_circle(muzzle, 3.5, Color(col, 0.9))
 	# HP bar above the sprite
 	var f := clampf(hp / max_hp, 0.0, 1.0)
 	var bar_y := -top - 10.0

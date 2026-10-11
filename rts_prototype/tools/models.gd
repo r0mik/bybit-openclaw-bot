@@ -151,6 +151,11 @@ func build(kind: String) -> Node3D:
 		"worker": return worker()
 		"marine": return marine()
 		"tank": return tank()
+		"wraith": return wraith()
+		"bunker": return bunker()
+		"ebay": return engineering_bay()
+		"turret": return missile_turret()
+		"starport": return starport()
 	push_error("unknown model " + kind)
 	return null
 
@@ -295,6 +300,119 @@ func factory() -> Node3D:
 	return r
 
 
+func bunker() -> Node3D:
+	var r := _root("Bunker")
+	var w := 8.0
+	var d := 6.4 * depth_scale()
+	box(r, Vector3(w, 0.35, d), Vector3(0, 0.18, 0), "dark")
+	# sandbag ring
+	for i in 22:
+		var a := i * TAU / 22.0
+		var p := Vector3(cos(a) * (w / 2 - 0.5), 0.45, sin(a) * (d / 2 - 0.5))
+		box(r, Vector3(0.9, 0.45, 0.55), p, "warm", Vector3(0, -rad_to_deg(a) + 90.0, 0))
+	# armoured casemate with sloped walls
+	box(r, Vector3(5.6, 1.5, d - 3.2), Vector3(0, 1.1, -0.2), "dark")
+	box(r, Vector3(5.0, 0.6, d - 3.8), Vector3(0, 2.1, -0.2), "metal")
+	for sz in [-1, 1]:
+		box(r, Vector3(5.6, 0.25, 1.1), Vector3(0, 1.75, -0.2 + sz * (d - 3.2) / 2.0), "metal", Vector3(sz * 35.0, 0, 0))
+	box(r, Vector3(5.65, 0.3, d - 3.1), Vector3(0, 1.55, -0.2), "team")
+	# firing slits with muzzle glow
+	var front := -0.2 + (d - 3.2) / 2.0
+	box(r, Vector3(5.6, 0.25, 0.06), Vector3(0, 0.55, front + 0.02), "team")
+	for k in 3:
+		box(r, Vector3(1.0, 0.22, 0.1), Vector3(-1.6 + k * 1.6, 1.15, front + 0.02), "black")
+		box(r, Vector3(0.5, 0.08, 0.05), Vector3(-1.6 + k * 1.6, 1.15, front + 0.08), "amber_glow")
+	for sx in [-1, 1]:
+		box(r, Vector3(0.1, 0.22, 1.0), Vector3(sx * 2.82, 1.15, -0.2), "black")
+	cyl(r, 0.04, 0.06, 1.4, Vector3(2.0, 2.9, -1.4), "dark")
+	sphere(r, 0.14, Vector3(2.0, 3.6, -1.4), "red_glow")
+	return r
+
+
+func engineering_bay() -> Node3D:
+	var r := _root("EngineeringBay")
+	var w := 10.0
+	var d := 8.0 * depth_scale()
+	box(r, Vector3(w, 0.4, d), Vector3(0, 0.2, 0), "dark")
+	box(r, Vector3(8.6, 2.4, d - 2.0), Vector3(0, 1.6, -0.3), "metal")
+	box(r, Vector3(8.65, 0.35, d - 1.95), Vector3(0, 2.3, -0.3), "team")
+	# rooftop research reactor: ring + glowing core
+	cyl(r, 2.2, 2.4, 0.7, Vector3(-1.2, 3.2, -0.8), "dark", Vector3.ZERO, 32)
+	cyl(r, 1.6, 1.6, 0.75, Vector3(-1.2, 3.25, -0.8), "glass", Vector3.ZERO, 32)
+	cyl(r, 0.6, 0.6, 1.4, Vector3(-1.2, 3.6, -0.8), "glow", Vector3.ZERO, 16)
+	for i in 6:
+		var a := i * TAU / 6.0
+		box(r, Vector3(0.3, 0.9, 0.3), Vector3(-1.2 + cos(a) * 2.3, 3.4, -0.8 + sin(a) * 2.3), "metal")
+	# lab tower with antenna array
+	box(r, Vector3(2.0, 2.2, 2.0), Vector3(2.8, 3.9, -2.0), "metal")
+	box(r, Vector3(2.05, 0.4, 2.05), Vector3(2.8, 4.4, -2.0), "glass")
+	cyl(r, 0.05, 0.08, 2.2, Vector3(2.8, 6.1, -2.0), "dark")
+	box(r, Vector3(1.4, 0.06, 0.06), Vector3(2.8, 6.6, -2.0), "dark")
+	sphere(r, 0.15, Vector3(2.8, 7.2, -2.0), "red_glow")
+	# workshop door and windows
+	var front := -0.3 + (d - 2.0) / 2.0
+	box(r, Vector3(3.0, 1.7, 0.2), Vector3(-1.5, 1.25, front + 0.05), "black")
+	box(r, Vector3(3.5, 0.28, 0.25), Vector3(-1.5, 2.2, front + 0.08), "hazard")
+	box(r, Vector3(3.6, 0.12, 1.3), Vector3(-1.5, 0.46, front + 0.7), "hazard")
+	for k in 3:
+		box(r, Vector3(0.7, 0.55, 0.08), Vector3(1.4 + k * 0.95, 1.8, front + 0.03), "glass")
+	return r
+
+
+func missile_turret() -> Node3D:
+	var r := _root("MissileTurret")
+	var w := 5.0
+	var d := 5.0 * depth_scale()
+	box(r, Vector3(w, 0.35, d), Vector3(0, 0.18, 0), "dark")
+	box(r, Vector3(w - 0.6, 0.15, d - 0.6), Vector3(0, 0.42, 0), "hazard")
+	cyl(r, 1.5, 1.8, 0.8, Vector3(0, 0.8, 0), "metal", Vector3.ZERO, 8)
+	cyl(r, 0.55, 0.7, 2.2, Vector3(0, 2.2, 0), "dark", Vector3.ZERO, 16)
+	box(r, Vector3(1.8, 0.9, 1.4), Vector3(0, 3.5, 0), "team")
+	box(r, Vector3(1.0, 0.5, 1.45), Vector3(0.5, 3.95, 0), "metal")
+	for sz in [-1, 1]:  # missile pods
+		box(r, Vector3(1.6, 0.8, 0.6), Vector3(0.2, 3.5, sz * 1.0), "metal")
+		for k in 4:
+			var mp := Vector3(1.02, 3.32 + (k / 2) * 0.36, sz * 1.0 + (k % 2 - 0.5) * 0.3)
+			sphere(r, 0.12, mp, "red_glow")
+	box(r, Vector3(0.1, 0.9, 0.9), Vector3(-0.9, 4.3, 0), "metal", Vector3(0, 0, 15))
+	return r
+
+
+func starport() -> Node3D:
+	var r := _root("Starport")
+	var w := 12.0
+	var d := 10.0 * depth_scale()
+	box(r, Vector3(w, 0.4, d), Vector3(0, 0.2, 0), "dark")
+	# hangar block with landing pad on the roof
+	box(r, Vector3(8.4, 1.8, d - 2.2), Vector3(-1.5, 1.3, -0.2), "metal")
+	box(r, Vector3(8.45, 0.3, d - 2.15), Vector3(-1.5, 1.95, -0.2), "team")
+	cyl(r, 3.6, 3.6, 0.2, Vector3(-1.5, 2.3, -0.4), "dark", Vector3.ZERO, 40)
+	cyl(r, 3.2, 3.2, 0.22, Vector3(-1.5, 2.31, -0.4), "hazard", Vector3.ZERO, 40)
+	cyl(r, 2.7, 2.7, 0.24, Vector3(-1.5, 2.32, -0.4), "dark", Vector3.ZERO, 40)
+	box(r, Vector3(0.35, 0.05, 2.2), Vector3(-2.3, 2.46, -0.4), "glow")  # "H" marking
+	box(r, Vector3(0.35, 0.05, 2.2), Vector3(-0.7, 2.46, -0.4), "glow")
+	box(r, Vector3(1.6, 0.05, 0.35), Vector3(-1.5, 2.46, -0.4), "glow")
+	for i in 8:
+		var a := i * TAU / 8.0
+		sphere(r, 0.14, Vector3(-1.5 + cos(a) * 3.45, 2.45, -0.4 + sin(a) * 3.45), "amber_glow")
+	# control tower
+	cyl(r, 0.7, 0.9, 4.2, Vector3(4.2, 2.5, -2.4), "metal", Vector3.ZERO, 16)
+	cyl(r, 1.5, 1.2, 1.0, Vector3(4.2, 5.0, -2.4), "glass", Vector3.ZERO, 16)
+	cyl(r, 1.6, 1.6, 0.25, Vector3(4.2, 5.6, -2.4), "team", Vector3.ZERO, 16)
+	cyl(r, 0.04, 0.06, 1.6, Vector3(4.2, 6.5, -2.4), "dark")
+	sphere(r, 0.16, Vector3(4.2, 7.3, -2.4), "red_glow")
+	# hangar doors and runway lights
+	var front := -0.2 + (d - 2.2) / 2.0
+	box(r, Vector3(5.0, 1.4, 0.2), Vector3(-1.5, 1.1, front + 0.05), "black")
+	box(r, Vector3(5.5, 0.25, 0.25), Vector3(-1.5, 1.9, front + 0.08), "hazard")
+	for k in 6:
+		sphere(r, 0.13, Vector3(-4.5 + k * 1.2, 0.5, front + 1.0), "glow")
+	box(r, Vector3(2.4, 1.2, 3.0), Vector3(4.2, 1.0, 1.6), "dark")
+	for k in 3:
+		box(r, Vector3(1.8, 0.1, 0.08), Vector3(4.2, 0.7 + k * 0.3, 3.12), "black")
+	return r
+
+
 # --- Units (face +X) ----------------------------------------------------------
 
 func worker() -> Node3D:
@@ -342,6 +460,24 @@ func tank() -> Node3D:
 	cyl(r, 0.09, 0.11, 2.2, Vector3(1.4, 1.62, 0), "black", Vector3(0, 0, -90), 12)
 	box(r, Vector3(0.3, 0.22, 0.22), Vector3(2.5, 1.62, 0), "dark")
 	cyl(r, 0.02, 0.03, 1.2, Vector3(-1.0, 2.3, 0.45), "dark")
+	return r
+
+
+## Flying fighter, hovering above the ground (its shadow lands on the ground in the sprite).
+func wraith() -> Node3D:
+	var r := _root("Wraith")
+	var body := Node3D.new()
+	body.position = Vector3(0, 3.0, 0)
+	r.add_child(body)
+	cyl(body, 0.05, 0.42, 2.2, Vector3(0.9, 0, 0), "team", Vector3(0, 0, -90), 12)  # nose
+	cyl(body, 0.42, 0.5, 1.3, Vector3(-0.85, 0, 0), "metal", Vector3(0, 0, -90), 12)  # fuselage
+	sphere(body, 0.3, Vector3(0.55, 0.28, 0), "glass", Vector3(1.6, 0.7, 0.9))
+	for sz in [-1, 1]:  # swept wings, engines, tail fins
+		box(body, Vector3(1.4, 0.1, 1.7), Vector3(-0.5, -0.05, sz * 1.1), "metal", Vector3(0, sz * 28.0, 0))
+		box(body, Vector3(0.5, 0.12, 0.9), Vector3(-0.8, 0.0, sz * 1.65), "team", Vector3(0, sz * 28.0, 0))
+		cyl(body, 0.2, 0.24, 1.0, Vector3(-1.2, -0.05, sz * 0.55), "dark", Vector3(0, 0, -90), 10)
+		cyl(body, 0.15, 0.15, 0.08, Vector3(-1.72, -0.05, sz * 0.55), "glow", Vector3(0, 0, -90), 10)
+		box(body, Vector3(0.6, 0.6, 0.08), Vector3(-1.3, 0.35, sz * 0.32), "metal", Vector3(sz * 15.0, 0, 20))
 	return r
 
 

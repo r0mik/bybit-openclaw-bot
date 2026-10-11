@@ -42,6 +42,8 @@ func setup(g, t: int, k: String) -> void:
 	radius = stats.radius
 	speed = stats.speed
 	acquire_timer = randf() * 0.3
+	if is_air():
+		z_index = 5  # flyers are drawn above everything on the ground
 	facing = randf() * TAU
 	add_to_group("units")
 
@@ -52,6 +54,14 @@ func is_alive() -> bool:
 
 func is_worker() -> bool:
 	return kind == "worker"
+
+
+func is_air() -> bool:
+	return stats.get("air", false)
+
+
+func can_target(e) -> bool:
+	return stats.get("anti_air", true) if e.is_air() else true
 
 
 func is_idle() -> bool:
@@ -102,6 +112,9 @@ func order_attack_move(p: Vector2) -> void:
 
 
 func order_attack(t) -> void:
+	if not can_target(t):
+		order_move(t.position)
+		return
 	_reset_order()
 	state = State.ATTACK
 	target = t

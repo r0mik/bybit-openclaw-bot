@@ -35,13 +35,16 @@ var game_over := false
 var elapsed := 0.0
 var win_check := 1.0
 var start_positions := [Vector2(450, 450), Vector2(3550, 2550)]
-var terrain_blobs: Array = []
 var autotest := false
+var building_textures := {}
+var mineral_textures: Array = []
+var ground_texture: Texture2D
 var report_timer := 0.0
 
 
 func _ready() -> void:
 	randomize()
+	_load_textures()
 	autotest = "--autotest" in OS.get_cmdline_user_args()
 	entities = Node2D.new()
 	entities.y_sort_enabled = true
@@ -53,7 +56,6 @@ func _ready() -> void:
 	camera = Camera2D.new()
 	add_child(camera)
 	camera.make_current()
-	_generate_terrain()
 	_setup_map()
 	hud = HUDScript.new()
 	add_child(hud)
@@ -65,6 +67,24 @@ func _ready() -> void:
 	show_message("Добывай минералы, строй армию и уничтожь красную базу!")
 
 
+func _load_textures() -> void:
+	for kind in Defs.BUILDINGS:
+		for t in [PLAYER, ENEMY]:
+			building_textures["%s_%d" % [kind, t]] = load("res://assets/buildings/%s_%d.png" % [kind, t])
+	for v in 3:
+		mineral_textures.append(load("res://assets/minerals/minerals_%d.png" % v))
+	ground_texture = load("res://assets/terrain/ground.png")
+	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+
+
+func building_texture(kind: String, t: int) -> Texture2D:
+	return building_textures["%s_%d" % [kind, t]]
+
+
+func mineral_texture(v: int) -> Texture2D:
+	return mineral_textures[v]
+
+
 func _add_ai(t: int) -> void:
 	var ai = AIScript.new()
 	ai.game = self
@@ -74,15 +94,6 @@ func _add_ai(t: int) -> void:
 
 
 # --- Map --------------------------------------------------------------------
-
-func _generate_terrain() -> void:
-	for i in 70:
-		terrain_blobs.append({
-			"pos": Vector2(randf() * MAP_SIZE.x, randf() * MAP_SIZE.y),
-			"r": randf_range(60, 220),
-			"color": Color(0.12, 0.16, 0.1, 0.5) if randf() < 0.6 else Color(0.22, 0.24, 0.16, 0.4),
-		})
-
 
 func _setup_map() -> void:
 	for t in [PLAYER, ENEMY]:
@@ -806,13 +817,7 @@ func _resolve_collisions() -> void:
 # --- Drawing ----------------------------------------------------------------
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, MAP_SIZE), Color(0.17, 0.21, 0.14))
-	for b in terrain_blobs:
-		draw_circle(b.pos, b.r, b.color)
-	for x in range(0, int(MAP_SIZE.x) + 1, 100):
-		draw_line(Vector2(x, 0), Vector2(x, MAP_SIZE.y), Color(1, 1, 1, 0.035))
-	for y in range(0, int(MAP_SIZE.y) + 1, 100):
-		draw_line(Vector2(0, y), Vector2(MAP_SIZE.x, y), Color(1, 1, 1, 0.035))
+	draw_texture_rect(ground_texture, Rect2(Vector2.ZERO, MAP_SIZE), true)
 	draw_rect(Rect2(Vector2.ZERO, MAP_SIZE), Color(0.5, 0.5, 0.45), false, 4.0)
 
 

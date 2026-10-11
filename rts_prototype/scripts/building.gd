@@ -101,41 +101,58 @@ func _spawn(uk: String) -> void:
 		u.order_gather(game.best_mineral(u.position))
 
 
+const SPRITE_PAD := 14.0  # transparent margin baked into the textures (shadow room)
+
+
 func _draw() -> void:
-	var col: Color = game.team_color(team)
-	var a := 0.5 if constructing else 1.0
+	var tex: Texture2D = game.building_texture(kind, team)
+	var pad := Vector2(SPRITE_PAD, SPRITE_PAD)
+	var full := Rect2(-size / 2.0 - pad, size + pad * 2.0)
 	var r := Rect2(-size / 2.0, size)
-	draw_rect(r, Color(col.darkened(0.6), a))
-	draw_rect(r.grow(-8.0), Color(col.darkened(0.3), a))
-	match kind:
-		"cc":
-			draw_circle(Vector2.ZERO, 26.0, Color(col.lightened(0.1), a))
-			draw_circle(Vector2.ZERO, 14.0, Color(col.darkened(0.5), a))
-		"depot":
-			draw_line(r.position + Vector2(10, 10), r.end - Vector2(10, 10), Color(col.lightened(0.3), a), 4.0)
-			draw_line(Vector2(r.end.x - 10, r.position.y + 10), Vector2(r.position.x + 10, r.end.y - 10), Color(col.lightened(0.3), a), 4.0)
-		"barracks":
-			for i in 3:
-				var y := r.position.y + 18.0 + i * 20.0
-				draw_line(Vector2(r.position.x + 14, y), Vector2(r.end.x - 14, y), Color(col.lightened(0.2), a), 5.0)
-		"factory":
-			draw_rect(Rect2(-22, -22, 44, 44), Color(col.lightened(0.15), a))
-			draw_line(Vector2(-30, 0), Vector2(30, 0), Color(col.darkened(0.6), a), 6.0)
-	draw_rect(r, Color(col.lightened(0.25), a), false, 2.0)
+	if constructing:
+		# Blueprint ghost, with the finished building rising from the bottom.
+		draw_texture_rect(tex, full, false, Color(0.45, 0.8, 1.0, 0.28))
+		var k := clampf(build_progress, 0.0, 1.0)
+		var ts := tex.get_size()
+		var src := Rect2(0.0, ts.y * (1.0 - k), ts.x, ts.y * k)
+		var dst := Rect2(full.position.x, full.end.y - full.size.y * k, full.size.x, full.size.y * k)
+		draw_texture_rect_region(tex, dst, src)
+		var y := clampf(dst.position.y, r.position.y, r.end.y)
+		draw_line(Vector2(r.position.x, y), Vector2(r.end.x, y), Color(0.5, 0.9, 1.0, 0.8), 2.0)
+		for i in 4:  # welding sparks
+			var sx := r.position.x + fposmod(game.elapsed * 97.0 + i * 37.0, r.size.x)
+			draw_circle(Vector2(sx, y), 2.0 + randf() * 1.5, Color(1.0, 0.9, 0.5, 0.9))
+		draw_rect(r, Color(0.5, 0.9, 1.0, 0.5), false, 1.0)
+	else:
+		draw_texture_rect(tex, full, false)
+	_draw_damage()
 	if selected:
 		draw_rect(r.grow(5.0), Color(0.3, 1.0, 0.3), false, 2.0)
-	var font := ThemeDB.fallback_font
-	draw_string(font, Vector2(-size.x / 2.0, -size.y / 2.0 + 16.0), stats.short,
-			HORIZONTAL_ALIGNMENT_CENTER, size.x, 12, Color(1, 1, 1, 0.85))
 	# HP bar
 	var f := clampf(hp / max_hp, 0.0, 1.0)
 	draw_rect(Rect2(-size.x / 2.0, -size.y / 2.0 - 10.0, size.x, 5.0), Color(0, 0, 0, 0.7))
 	draw_rect(Rect2(-size.x / 2.0, -size.y / 2.0 - 10.0, size.x * f, 5.0), Color(1.0 - f, f, 0.15))
-	# Construction / production progress
-	var bar := Rect2(-size.x / 2.0 + 10.0, size.y / 2.0 - 16.0, size.x - 20.0, 6.0)
-	if constructing:
-		draw_rect(bar, Color(0, 0, 0, 0.7))
-		draw_rect(Rect2(bar.position, Vector2(bar.size.x * build_progress, bar.size.y)), Color(0.3, 0.8, 1.0))
-	elif not queue.is_empty():
+	# Production progress
+	if not constructing and not queue.is_empty():
+		var bar := Rect2(-size.x / 2.0 + 10.0, size.y / 2.0 + 4.0, size.x - 20.0, 5.0)
 		draw_rect(bar, Color(0, 0, 0, 0.7))
 		draw_rect(Rect2(bar.position, Vector2(bar.size.x * prod_progress, bar.size.y)), Color(1.0, 0.85, 0.2))
+
+
+## Fire and smoke on badly damaged buildings.
+func _draw_damage() -> void:
+	var f := hp / max_hp
+	if constructing or f > 0.6:
+		return
+	var spots := 1 if f > 0.35 else 3
+	var rng := RandomNumberGenerator.new()
+	rng.seed = get_instance_id()
+	var t: float = game.elapsed
+	for i in spots:
+		var p := Vector2(rng.randf_range(-0.35, 0.35) * size.x, rng.randf_range(-0.3, 0.3) * size.y)
+		for j in 3:  # rising smoke puffs
+			var k := fposmod(t * 0.6 + j / 3.0 + i * 0.17, 1.0)
+			draw_circle(p + Vector2(k * 12.0, -k * 44.0), 7.0 + k * 13.0, Color(0.1, 0.1, 0.1, 0.6 * (1.0 - k)))
+		var flick := 0.75 + 0.25 * sin(t * 17.0 + i * 2.1)
+		draw_circle(p, 11.0 * flick, Color(1.0, 0.3, 0.05, 0.8))
+		draw_circle(p + Vector2(0, -3), 6.0 * flick, Color(1.0, 0.85, 0.3, 0.95))

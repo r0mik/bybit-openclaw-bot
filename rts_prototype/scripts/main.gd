@@ -38,6 +38,10 @@ var start_positions := [Vector2(450, 450), Vector2(3550, 2550)]
 var autotest := false
 var building_textures := {}
 var mineral_textures: Array = []
+var unit_textures := {}
+var sprite_meta := {}
+var sprite_res := 2.0
+var sprite_dirs := 16
 var ground_texture: Texture2D
 var report_timer := 0.0
 
@@ -68,6 +72,12 @@ func _ready() -> void:
 
 
 func _load_textures() -> void:
+	sprite_meta = JSON.parse_string(FileAccess.get_file_as_string("res://assets/sprites.json"))
+	sprite_res = float(sprite_meta.res)
+	sprite_dirs = int(sprite_meta.dirs)
+	for kind in Defs.UNITS:
+		for t in [PLAYER, ENEMY]:
+			unit_textures["%s_%d" % [kind, t]] = load("res://assets/units/%s_%d.png" % [kind, t])
 	for kind in Defs.BUILDINGS:
 		for t in [PLAYER, ENEMY]:
 			building_textures["%s_%d" % [kind, t]] = load("res://assets/buildings/%s_%d.png" % [kind, t])
@@ -79,6 +89,19 @@ func _load_textures() -> void:
 
 func building_texture(kind: String, t: int) -> Texture2D:
 	return building_textures["%s_%d" % [kind, t]]
+
+
+func unit_texture(kind: String, t: int) -> Texture2D:
+	return unit_textures["%s_%d" % [kind, t]]
+
+
+## Height of the sprite above the ground anchor, in game pixels.
+func unit_top(kind: String) -> float:
+	return float(sprite_meta.units[kind].top)
+
+
+func building_top(kind: String) -> float:
+	return float(sprite_meta.buildings[kind].top)
 
 
 func mineral_texture(v: int) -> Texture2D:
@@ -234,11 +257,15 @@ func find_enemy(u, radius: float):
 
 
 func entity_at(p: Vector2):
+	# Sprites stand up from their ground anchor, so also test the body, not only the feet.
 	for u in get_tree().get_nodes_in_group("units"):
-		if u.is_alive() and p.distance_to(u.position) <= u.radius + 4.0:
+		if not u.is_alive():
+			continue
+		var body: Vector2 = u.position + Vector2(0, -unit_top(u.kind) * 0.5)
+		if p.distance_to(u.position) <= u.radius + 4.0 or p.distance_to(body) <= u.radius + 4.0:
 			return u
 	for b in get_tree().get_nodes_in_group("buildings"):
-		if b.is_alive() and b.rect().has_point(p):
+		if b.is_alive() and b.pick_rect().has_point(p):
 			return b
 	for m in get_tree().get_nodes_in_group("minerals"):
 		if m.is_alive() and p.distance_to(m.position) <= m.radius + 4.0:
@@ -657,7 +684,7 @@ func _finish_selection(a: Vector2, b: Vector2, add: bool) -> void:
 				picked.append(u)
 		if picked.is_empty():
 			for bl in team_buildings(PLAYER):
-				if r.intersects(bl.rect()):
+				if r.intersects(bl.pick_rect()):
 					picked.append(bl)
 	if add:
 		var s := selection.filter(func(e): return valid(e) and e.team == PLAYER)
@@ -841,6 +868,10 @@ func _draw_overlay() -> void:
 		var ok := can_place(placing, p)
 		var c := Color(0.2, 1.0, 0.2, 0.35) if ok else Color(1.0, 0.2, 0.2, 0.35)
 		overlay.draw_rect(Rect2(p - size / 2.0, size), c, true)
+		var tex := building_texture(placing, PLAYER)
+		var ts := tex.get_size() / sprite_res
+		overlay.draw_texture_rect(tex, Rect2(p - ts / 2.0, ts), false,
+				Color(0.7, 1.0, 0.7, 0.6) if ok else Color(1.0, 0.5, 0.5, 0.6))
 		overlay.draw_rect(Rect2(p - size / 2.0, size), Color(c, 0.9), false, 2.0)
 	if attack_mode:
 		var c := Color(1.0, 0.25, 0.2)

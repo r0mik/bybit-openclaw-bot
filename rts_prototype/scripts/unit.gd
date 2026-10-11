@@ -296,33 +296,27 @@ func _move_to(p: Vector2, delta: float, arrive: float) -> bool:
 # --- Drawing ----------------------------------------------------------------
 
 func _draw() -> void:
-	var col: Color = game.team_color(team)
-	if selected:
-		draw_arc(Vector2.ZERO, radius + 4.0, 0.0, TAU, 32, Color(0.3, 1.0, 0.3), 2.0)
+	var tex: Texture2D = game.unit_texture(kind, team)
+	var fs := float(tex.get_height())             # frame size in texture pixels
+	var dirs: int = game.sprite_dirs
+	var gs: float = fs / game.sprite_res                # frame size in game pixels
+	var top: float = game.unit_top(kind)
 	var dir := Vector2.RIGHT.rotated(facing)
-	match kind:
-		"worker":
-			draw_circle(Vector2.ZERO, radius, col.darkened(0.15))
-			draw_circle(Vector2.ZERO, radius * 0.55, Color(0.95, 0.75, 0.3))
-			draw_line(dir * radius * 0.4, dir * (radius + 5.0), Color(0.8, 0.8, 0.8), 3.0)
-		"marine":
-			draw_circle(Vector2.ZERO, radius, col)
-			draw_circle(Vector2.ZERO, radius * 0.5, col.lightened(0.4))
-			draw_line(Vector2.ZERO, dir * (radius + 7.0), Color(0.2, 0.2, 0.2), 3.0)
-		"tank":
-			var pts := PackedVector2Array()
-			for c in [Vector2(-1.1, -0.75), Vector2(1.1, -0.75), Vector2(1.1, 0.75), Vector2(-1.1, 0.75)]:
-				pts.append((c * radius).rotated(facing))
-			draw_colored_polygon(pts, col.darkened(0.3))
-			draw_circle(Vector2.ZERO, radius * 0.6, col)
-			draw_line(Vector2.ZERO, dir * (radius + 16.0), Color(0.15, 0.15, 0.15), 5.0)
+	if selected:  # selection ellipse on the ground, under the sprite
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 0.6))
+		draw_arc(Vector2.ZERO, radius + 4.0, 0.0, TAU, 32, Color(0.3, 1.0, 0.3), 2.0)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	var idx := int(round(fposmod(facing, TAU) / TAU * dirs)) % dirs
+	draw_texture_rect_region(tex, Rect2(-gs / 2.0, -gs / 2.0, gs, gs), Rect2(idx * fs, 0.0, fs, fs))
 	if carrying > 0:
-		draw_circle(Vector2(0, -radius - 3.0), 4.0, Color(0.4, 0.9, 1.0))
+		draw_circle(Vector2(0, -top - 3.0), 3.5, Color(0.4, 0.9, 1.0))
 	if shot_flash > 0.0:
-		draw_line(dir * (radius + 6.0), to_local(shot_to), Color(1.0, 0.95, 0.5), 2.0)
+		var muzzle := dir * (radius + 4.0) + Vector2(0, -top * 0.55)
+		draw_line(muzzle, to_local(shot_to) + Vector2(0, -6.0), Color(1.0, 0.95, 0.5), 2.0)
+		draw_circle(muzzle, 3.0, Color(1.0, 0.9, 0.4, 0.9))
 	if selected or hp < max_hp:
 		var w := radius * 2.4
-		var y := -radius - 10.0
+		var y := -top - 9.0
 		var f := clampf(hp / max_hp, 0.0, 1.0)
 		draw_rect(Rect2(-w / 2.0, y, w, 4.0), Color(0, 0, 0, 0.7))
 		draw_rect(Rect2(-w / 2.0, y, w * f, 4.0), Color(1.0 - f, f, 0.15))

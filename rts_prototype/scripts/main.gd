@@ -34,12 +34,25 @@ var game_over := false
 var elapsed := 0.0
 var win_check := 1.0
 var start_positions := [Vector2(450, 450), Vector2(3550, 2550)]
+var expansions := [Vector2(450, 2550), Vector2(3550, 450), Vector2(2000, 1500)]
+## Map layout (game px). Hills are plateaus with cliffs, lakes are water: both block ground units.
+var hills := [
+	{"pos": Vector2(1250, 950), "r": 230.0, "h": 10.0}, {"pos": Vector2(2750, 2050), "r": 230.0, "h": 10.0},
+	{"pos": Vector2(1050, 1950), "r": 190.0, "h": 9.0}, {"pos": Vector2(2950, 1050), "r": 190.0, "h": 9.0},
+	{"pos": Vector2(2000, 520), "r": 170.0, "h": 8.0}, {"pos": Vector2(2000, 2480), "r": 170.0, "h": 8.0},
+]
+var lakes := [{"pos": Vector2(2550, 760), "r": 210.0}, {"pos": Vector2(1450, 2240), "r": 210.0}]
+var obstacles: Array = []  # {pos, r} circles derived from hills and lakes
 var autotest := false
 var report_timer := 0.0
 
 
 func _ready() -> void:
 	randomize()
+	for h in hills:
+		obstacles.append({"pos": h.pos, "r": h.r * 0.92})
+	for l in lakes:
+		obstacles.append({"pos": l.pos, "r": l.r * 1.15})
 	autotest = "--autotest" in OS.get_cmdline_user_args()
 	view = ViewScript.new()
 	add_child(view)
@@ -74,7 +87,7 @@ func _setup_map() -> void:
 		spawn_building(t, "cc", base, false)
 		for i in 4:
 			spawn_unit(t, "worker", base + Vector2(-40 + i * 27, 85))
-	for pos in [Vector2(450, 2550), Vector2(3550, 450), Vector2(2000, 1500)]:
+	for pos in expansions:
 		_spawn_mineral_field(pos)
 	for u in get_tree().get_nodes_in_group("units"):
 		u.order_gather(best_mineral(u.position))
@@ -250,6 +263,9 @@ func can_place(kind: String, pos: Vector2, margin := 6.0) -> bool:
 	for b in get_tree().get_nodes_in_group("buildings"):
 		if b.is_alive() and grown.intersects(b.rect()):
 			return false
+	for o in obstacles:
+		if rect_point_dist(r, o.pos) < o.r + 10.0:
+			return false
 	var gap := 70.0 if kind == "cc" else 16.0
 	for m in get_tree().get_nodes_in_group("minerals"):
 		if m.is_alive() and rect_point_dist(r, m.position) < m.radius + gap:
@@ -272,6 +288,13 @@ func steer_around(u, dir: Vector2, goal: Vector2) -> Vector2:
 			return Vector2(sx if sx != 0.0 else 1.0, 0.0)
 		var sy := signf(goal.y - b.position.y)
 		return Vector2(0.0, sy if sy != 0.0 else 1.0)
+	var far: Vector2 = u.position + dir * (u.radius + 34.0)
+	for o in obstacles:  # start curving early around hills and lakes
+		var od: float = o.r + u.radius + 2.0
+		if far.distance_to(o.pos) < od and goal.distance_to(o.pos) > od:
+			var on: Vector2 = (u.position - o.pos).normalized()
+			var ot := Vector2(-on.y, on.x)
+			return ot if ot.dot(goal - u.position) >= 0.0 else -ot
 	for m in get_tree().get_nodes_in_group("minerals"):
 		var min_d: float = m.radius + u.radius + 2.0
 		if ahead.distance_to(m.position) < min_d and goal.distance_to(m.position) > min_d:
@@ -859,4 +882,10 @@ func _resolve_collisions() -> void:
 				var d := diff.length()
 				var n := diff / d if d > 0.01 else Vector2.DOWN
 				u.position = mn.position + n * min_d
+		for o in obstacles:  # hills and lakes
+			var od: Vector2 = u.position - o.pos
+			var orr: float = o.r + u.radius
+			if od.length_squared() < orr * orr:
+				var dl := od.length()
+				u.position = o.pos + (od / dl if dl > 0.01 else Vector2.DOWN) * orr
 		u.position = u.position.clamp(Vector2(10, 10), MAP_SIZE - Vector2(10, 10))

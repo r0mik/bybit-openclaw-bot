@@ -5,6 +5,10 @@ extends Node3D
 ## Coordinates: logic (x, y) in px  ->  world (x / PX, 0, y / PX).
 
 const Models = preload("res://scripts/models.gd")
+const Defs = preload("res://scripts/defs.gd")
+const TerrainScript = preload("res://scripts/terrain.gd")
+const Doodads = preload("res://scripts/doodads.gd")
+const WATER_LEVEL := -0.35
 const PX := 10.0
 const PITCH := 56.0
 const FOV := 38.0
@@ -21,6 +25,7 @@ var builders: Array = []    # Models instance per team (shares materials)
 var views := {}             # entity -> Node3D root
 var heights := {}           # model kind -> height in world units
 var time := 0.0
+var terrain  # scripts/terrain.gd
 
 var fx_root: Node3D
 var _additive: StandardMaterial3D
@@ -54,7 +59,8 @@ func setup(g, team_colors: Array) -> void:
 	add_child(fx_root)
 	_make_fx_resources()
 	_make_terrain()
-	_make_rocks()
+	_make_water()
+	_make_doodads()
 
 
 # --- World setup --------------------------------------------------------------
@@ -102,13 +108,12 @@ func _make_environment() -> void:
 
 
 func _make_terrain() -> void:
-	var map_w: Vector2 = game.map_size / PX
-	var margin := 80.0
-	var pm := PlaneMesh.new()
-	pm.size = map_w + Vector2(margin, margin) * 2.0
+	var flats := []
+	for p in game.start_positions + game.expansions:
+		flats.append({"c": p / PX, "r": 50.0})
+	terrain = TerrainScript.new(game.map_size / PX, _to_world(game.hills), _to_world(game.lakes), flats)
 	var mi := MeshInstance3D.new()
-	mi.mesh = pm
-	mi.position = Vector3(map_w.x / 2.0, 0, map_w.y / 2.0)
+	mi.mesh = terrain.build_mesh()
 	var sm := ShaderMaterial.new()
 	sm.shader = load("res://scripts/terrain.gdshader")
 	for layer in ["dirt", "grass", "rock"]:
@@ -124,62 +129,177 @@ func _make_terrain() -> void:
 	nt.seamless = true
 	nt.noise = noise
 	sm.set_shader_parameter("mask", nt)
-	sm.set_shader_parameter("map_size", map_w)
+	sm.set_shader_parameter("map_size", game.map_size / PX)
+	sm.set_shader_parameter("splat", terrain.splat_texture())
+	sm.set_shader_parameter("splat_origin", terrain.origin)
+	sm.set_shader_parameter("splat_size", Vector2((terrain.cols - 1) * terrain.STEP, (terrain.rows - 1) * terrain.STEP))
 	mi.material_override = sm
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 
 
-## Procedural boulders: a wall of big rocks around the map edge and small pebbles inside.
-func _make_rocks() -> void:
-	var map_w: Vector2 = game.map_size / PX
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = load("res://assets/terrain/rock.png")
-	mat.normal_enabled = true
-	mat.normal_texture = load("res://assets/terrain/rock_n.png")
-	mat.uv1_triplanar = true
-	mat.uv1_scale = Vector3.ONE * 0.35
-	mat.albedo_color = Color(0.78, 0.74, 0.68)
-	mat.roughness = 0.9
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 77
-	var meshes := []
-	for i in 3:
-		meshes.append(_rock_mesh(i + 3))
-	var border := []
-	var perim := 2.0 * (map_w.x + map_w.y)
-	var d := 0.0
-	while d < perim:
-		var p: Vector2
-		var out: Vector2
-		if d < map_w.x:
-			p = Vector2(d, 0); out = Vector2(0, -1)
-		elif d < map_w.x + map_w.y:
-			p = Vector2(map_w.x, d - map_w.x); out = Vector2(1, 0)
-		elif d < 2.0 * map_w.x + map_w.y:
-			p = Vector2(map_w.x - (d - map_w.x - map_w.y), map_w.y); out = Vector2(0, 1)
+## Converts hill / lake definitions from game px to world units.
+func _to_world(arr: Array) -> Array:
+	var out := []
+	for o in arr:
+		var d := {"c": o.pos / PX, "r": o.r / PX}
+		if o.has("h"):
+			d["h"] = o.h
 		else:
-			p = Vector2(0, map_w.y - (d - 2.0 * map_w.x - map_w.y)); out = Vector2(-1, 0)
-		for layer in 2:
-			var s := rng.randf_range(3.0, 7.5) * (1.0 + layer * 0.5)
-			var q := p + out * (s * 0.6 + layer * 7.0 + rng.randf_range(0, 3))
-			border.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.7, 1.3), s)),
-					Vector3(q.x, -s * 0.15, q.y)))
-		d += rng.randf_range(4.0, 8.0)
-	var pebbles := []
-	for i in 420:
-		var s := rng.randf_range(0.12, 0.45)
-		pebbles.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s, s)),
-				Vector3(rng.randf() * map_w.x, -s * 0.2, rng.randf() * map_w.y)))
-	for i in 3:
-		var part := []
-		for k in range(i, border.size(), 3):
-			part.append(border[k])
-		_add_multimesh(meshes[i], mat, part)
-		var pp := []
-		for k in range(i, pebbles.size(), 3):
-			pp.append(pebbles[k])
-		_add_multimesh(meshes[i], mat, pp)
+			d["depth"] = 3.5
+		out.append(d)
+	return out
+
+
+func _make_water() -> void:
+	var noise := FastNoiseLite.new()
+	noise.seed = 9
+	noise.frequency = 0.03
+	var nt := NoiseTexture2D.new()
+	nt.width = 256
+	nt.height = 256
+	nt.seamless = true
+	nt.as_normal_map = true
+	nt.bump_strength = 6.0
+	nt.noise = noise
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://scripts/water.gdshader")
+	mat.set_shader_parameter("ripples", nt)
+	for l in game.lakes:
+		var pm := PlaneMesh.new()
+		pm.size = Vector2.ONE * l.r / PX * 2.6
+		var mi := MeshInstance3D.new()
+		mi.mesh = pm
+		mi.material_override = mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.position = Vector3(l.pos.x / PX, WATER_LEVEL, l.pos.y / PX)
+		add_child(mi)
+
+
+## Height of the ground (world units) under a logic point (game px).
+func ground_h(p: Vector2) -> float:
+	return terrain.height(p.x / PX, p.y / PX)
+
+
+func _on_ground(x: float, z: float, scale: float, rng: RandomNumberGenerator, sink := 0.1) -> Transform3D:
+	var b := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * scale)
+	return Transform3D(b, Vector3(x, terrain.height(x, z) - sink * scale, z))
+
+
+## Palms, bushes, grass, boulders, pebbles and supply crates.
+func _make_doodads() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 2024
+	var map_w: Vector2 = game.map_size / PX
+	var foliage := ShaderMaterial.new()
+	foliage.shader = load("res://scripts/foliage.gdshader")
+	var grass_mat: ShaderMaterial = foliage.duplicate()
+	grass_mat.set_shader_parameter("sway", 0.08)
+	grass_mat.set_shader_parameter("speed", 2.4)
+	var palms := [[], [], [], []]
+	var bushes := [[], [], []]
+	var boulders := [[], [], []]
+	var pebbles := [[], [], []]
+	for h in game.hills:
+		var c: Vector2 = h.pos / PX
+		var r: float = h.r / PX
+		for i in rng.randi_range(5, 8):  # oasis on the plateau
+			var a := rng.randf() * TAU
+			var d := sqrt(rng.randf()) * r * 0.5
+			_add_palm(palms, bushes, c.x + cos(a) * d, c.y + sin(a) * d, rng)
+		for i in 16:  # boulders at the foot of the cliffs
+			var a := rng.randf() * TAU
+			var d := r * rng.randf_range(0.8, 1.02)
+			boulders[i % 3].append(_on_ground(c.x + cos(a) * d, c.y + sin(a) * d, rng.randf_range(0.9, 2.6), rng, 0.3))
+	for l in game.lakes:
+		var c: Vector2 = l.pos / PX
+		var r: float = l.r / PX
+		for i in 14:  # palms along the sandy shore
+			var a := i * TAU / 14.0 + rng.randf_range(-0.15, 0.15)
+			var d := r * rng.randf_range(0.97, 1.12)
+			_add_palm(palms, bushes, c.x + cos(a) * d, c.y + sin(a) * d, rng)
+		for i in 10:
+			var a := rng.randf() * TAU
+			var d := r * rng.randf_range(0.85, 1.0)
+			boulders[i % 3].append(_on_ground(c.x + cos(a) * d, c.y + sin(a) * d, rng.randf_range(0.5, 1.4), rng, 0.3))
+	for i in 320:  # groves and boulders on the border mountains
+		var side := rng.randi() % 4
+		var t := rng.randf()
+		var out := rng.randf_range(2.0, 40.0)
+		var x: float = [t * map_w.x, map_w.x + out, t * map_w.x, -out][side]
+		var z: float = [-out, t * map_w.y, map_w.y + out, t * map_w.y][side]
+		if rng.randf() < 0.3:
+			_add_palm(palms, bushes, x, z, rng)
+		else:
+			boulders[i % 3].append(_on_ground(x, z, rng.randf_range(2.0, 6.5), rng, 0.25))
+	for i in 600:
+		var x := rng.randf_range(-20.0, map_w.x + 20.0)
+		var z := rng.randf_range(-20.0, map_w.y + 20.0)
+		pebbles[i % 3].append(_on_ground(x, z, rng.randf_range(0.12, 0.45), rng, 0.2))
+	var tufts := [[], [], []]
+	var placed := 0
+	var tries := 0
+	while placed < 7000 and tries < 60000:
+		tries += 1
+		var x := rng.randf_range(-15.0, map_w.x + 15.0)
+		var z := rng.randf_range(-15.0, map_w.y + 15.0)
+		var lay: Color = terrain.layers(x, z)
+		if lay.r < 0.45 or lay.g > 0.2 or rng.randf() > lay.r or terrain.height(x, z) < WATER_LEVEL + 0.1:
+			continue
+		tufts[placed % 3].append(_on_ground(x, z, rng.randf_range(1.1, 2.2), rng, 0.05))
+		placed += 1
+		if rng.randf() < 0.06:
+			bushes[placed % 3].append(_on_ground(x, z, rng.randf_range(0.5, 1.0), rng))
+	for k in 4:
+		_add_multimesh(Doodads.palm(100 + k), foliage, palms[k], true)
+	for k in 3:
+		_add_multimesh(Doodads.bush(200 + k), foliage, bushes[k], true)
+		_add_multimesh(Doodads.grass_tuft(300 + k), grass_mat, tufts[k], false)
+	var rock_mat := StandardMaterial3D.new()
+	rock_mat.albedo_texture = load("res://assets/terrain/rock.png")
+	rock_mat.normal_enabled = true
+	rock_mat.normal_texture = load("res://assets/terrain/rock_n.png")
+	rock_mat.uv1_triplanar = true
+	rock_mat.uv1_scale = Vector3.ONE * 0.35
+	rock_mat.albedo_color = Color(0.78, 0.74, 0.68)
+	rock_mat.roughness = 0.9
+	for k in 3:
+		var rm := _rock_mesh(k + 3)
+		_add_multimesh(rm, rock_mat, boulders[k], true)
+		_add_multimesh(rm, rock_mat, pebbles[k], false)
+	_make_supply_dumps(rng)
+
+
+func _add_palm(palms: Array, bushes: Array, x: float, z: float, rng: RandomNumberGenerator) -> void:
+	palms[rng.randi() % 4].append(_on_ground(x, z, rng.randf_range(0.8, 1.15), rng, 0.0))
+	for k in rng.randi_range(1, 2):
+		var a := rng.randf() * TAU
+		bushes[rng.randi() % 3].append(_on_ground(x + cos(a) * 1.6, z + sin(a) * 1.6, rng.randf_range(0.6, 1.1), rng))
+
+
+## Abandoned crates and fuel barrels near the expansions.
+func _make_supply_dumps(rng: RandomNumberGenerator) -> void:
+	var crate_mat: StandardMaterial3D = builders[0].mat("warm").duplicate()
+	crate_mat.albedo_color = Color(0.55, 0.45, 0.3)
+	var barrel_mat := StandardMaterial3D.new()
+	barrel_mat.albedo_color = Color(0.55, 0.18, 0.12)
+	barrel_mat.roughness = 0.5
+	barrel_mat.metallic = 0.4
+	var crates := []
+	var barrels := []
+	for e in game.expansions:
+		var to_c: Vector2 = game.map_size / 2.0 - e
+		var dir := to_c.normalized() if to_c.length() > 1.0 else Vector2.DOWN
+		var base: Vector2 = (e + dir.rotated(PI / 2.0) * 230.0) / PX
+		for i in 5:
+			var s := rng.randf_range(0.8, 1.2)
+			var xf := _on_ground(base.x + rng.randf_range(-2.0, 2.0), base.y + rng.randf_range(-2.0, 2.0), s, rng, -0.5)
+			crates.append(xf)
+			if rng.randf() < 0.4:
+				crates.append(Transform3D(xf.basis.rotated(Vector3.UP, 0.4), xf.origin + Vector3(0, s, 0)))
+		for i in 4:
+			barrels.append(_on_ground(base.x + 3.0 + rng.randf_range(-1.0, 1.5), base.y + rng.randf_range(-1.5, 1.5), 1.0, rng, -0.55))
+	_add_multimesh(Doodads.crate(), crate_mat, crates, true)
+	_add_multimesh(Doodads.barrel(), barrel_mat, barrels, true)
 
 
 func _rock_mesh(seed: int) -> ArrayMesh:
@@ -205,7 +325,9 @@ func _rock_mesh(seed: int) -> ArrayMesh:
 	return st.commit()
 
 
-func _add_multimesh(mesh: Mesh, mat: Material, xforms: Array) -> void:
+func _add_multimesh(mesh: Mesh, mat: Material, xforms: Array, shadows := true) -> void:
+	if xforms.is_empty():
+		return
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
@@ -215,6 +337,8 @@ func _add_multimesh(mesh: Mesh, mat: Material, xforms: Array) -> void:
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.material_override = mat
+	if not shadows:
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
 
 
@@ -372,7 +496,7 @@ func top_of(e) -> float:
 
 func _sync(e, root: Node3D, delta: float) -> void:
 	var model: Node3D = root.get_node("Model")
-	var p3 := Vector3(e.position.x / PX, 0, e.position.y / PX)
+	var p3 := Vector3(e.position.x / PX, ground_h(e.position), e.position.y / PX)
 	root.get_node("Ring").visible = e.selected
 	if e.is_in_group("units"):
 		var moved := root.position.distance_to(p3) > 0.002
@@ -399,6 +523,7 @@ func _sync(e, root: Node3D, delta: float) -> void:
 					want = -(e.target.position - e.position).angle() - model.rotation.y
 				tur.rotation.y = lerp_angle(tur.rotation.y, want, minf(1.0, delta * 6.0))
 	elif e.is_in_group("buildings"):
+		p3.y = _footprint_h(e.position, e.size)
 		root.position = p3
 		var holo := root.get_node_or_null("Holo")
 		if e.constructing:
@@ -425,10 +550,19 @@ func _sync(e, root: Node3D, delta: float) -> void:
 		model.scale = Vector3(k, k, k)
 
 
+## Lowest ground point under a footprint, so buildings never float on slopes.
+func _footprint_h(p: Vector2, size: Vector2) -> float:
+	var h := ground_h(p)
+	for sx in [-0.5, 0.5]:
+		for sy in [-0.5, 0.5]:
+			h = minf(h, ground_h(p + Vector2(sx * size.x, sy * size.y)))
+	return h
+
+
 func _process(delta: float) -> void:
 	time += delta
 	var p := deg_to_rad(PITCH)
-	var target := Vector3(focus.x / PX, 0, focus.y / PX)
+	var target := Vector3(focus.x / PX, ground_h(focus) * 0.5, focus.y / PX)
 	camera.transform = Transform3D(Basis(), target + Vector3(0, sin(p), cos(p)) * dist).looking_at(target, Vector3.UP)
 	for e in views.keys():
 		if is_instance_valid(e):
@@ -450,7 +584,11 @@ func screen_to_ground(sp: Vector2) -> Vector2:
 	var d := camera.project_ray_normal(sp)
 	if absf(d.y) < 1e-4:
 		return focus
-	var hit := o + d * (-o.y / d.y)
+	var level := 0.0
+	var hit := o
+	for i in 4:  # refine the ray / height-field intersection
+		hit = o + d * ((level - o.y) / d.y)
+		level = terrain.height(hit.x, hit.z)
 	return Vector2(hit.x, hit.z) * PX
 
 
@@ -459,7 +597,7 @@ func mouse_ground() -> Vector2:
 
 
 func to_screen(p: Vector2, h := 0.0) -> Vector2:
-	return camera.unproject_position(Vector3(p.x / PX, h, p.y / PX))
+	return camera.unproject_position(Vector3(p.x / PX, h + ground_h(p), p.y / PX))
 
 
 ## Screen-space length of a world distance r (world units) measured at point p, height h.
@@ -549,7 +687,7 @@ func _update_ghost() -> void:
 	if _ghost == null:
 		return
 	var p: Vector2 = game.snap(mouse_ground())
-	_ghost.position = Vector3(p.x / PX, 0.02, p.y / PX)
+	_ghost.position = Vector3(p.x / PX, _footprint_h(p, Defs.BUILDINGS[kind].size) + 0.02, p.y / PX)
 	var mat := _ghost_ok_mat if game.can_place(kind, p) else _ghost_bad_mat
 	_override_all(_ghost, mat)
 
@@ -565,7 +703,7 @@ func _override_all(n: Node, mat: Material) -> void:
 # --- Effects ----------------------------------------------------------------------
 
 func _world(p: Vector2, h := 0.0) -> Vector3:
-	return Vector3(p.x / PX, h, p.y / PX)
+	return Vector3(p.x / PX, h + ground_h(p), p.y / PX)
 
 
 func _burst(pos: Vector3, amount: int, ramp: Gradient, mat: Material, speed: float, size: float,

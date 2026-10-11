@@ -20,7 +20,13 @@ func _to_mini(p: Vector2) -> Vector2:
 func _draw() -> void:
 	if game == null:
 		return
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.1, 0.13, 0.09))
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0.16, 0.14, 0.1))
+	var k: float = size.x / game.map_size.x
+	for h in game.hills:
+		draw_circle(_to_mini(h.pos), h.r * k, Color(0.3, 0.33, 0.2))
+		draw_arc(_to_mini(h.pos), h.r * k, 0.0, TAU, 24, Color(0.45, 0.42, 0.34), 1.0)
+	for l in game.lakes:
+		draw_circle(_to_mini(l.pos), l.r * k * 0.9, Color(0.15, 0.35, 0.5))
 	for m in game.get_tree().get_nodes_in_group("minerals"):
 		draw_rect(Rect2(_to_mini(m.position) - Vector2(1.5, 1.5), Vector2(3, 3)), Color(0.4, 0.85, 1.0))
 	for b in game.get_tree().get_nodes_in_group("buildings"):

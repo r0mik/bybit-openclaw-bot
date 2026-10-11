@@ -3,6 +3,7 @@ extends CanvasLayer
 
 const Defs = preload("res://scripts/defs.gd")
 const MinimapScript = preload("res://scripts/minimap.gd")
+const OverlayScript = preload("res://scripts/overlay.gd")
 
 var game
 var res_label: Label
@@ -17,6 +18,9 @@ var cmd_signature := ""
 
 func setup(g) -> void:
 	game = g
+	var overlay = OverlayScript.new()  # first child, so panels draw on top of it
+	overlay.game = game
+	add_child(overlay)
 	# Top bar
 	var top := PanelContainer.new()
 	top.anchor_right = 1.0

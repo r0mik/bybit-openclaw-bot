@@ -74,57 +74,56 @@ def tile_noise(n, cutoff, rng):
     return (out - out.min()) / (out.max() - out.min())
 
 
-def draw_ground():
+# --- Terrain layers (albedo + normal map) for the 3D ground shader ------------
+
+def normal_from_height(h, strength):
+    """Tangent-space normal map from a periodic height field (stays seamless)."""
+    dx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) * strength
+    dy = (np.roll(h, -1, 0) - np.roll(h, 1, 0)) * strength
+    n = np.dstack([-dx, dy, np.ones_like(h)])
+    n /= np.linalg.norm(n, axis=2, keepdims=True)
+    return Image.fromarray(((n * 0.5 + 0.5) * 255).astype(np.uint8), "RGB")
+
+
+def colorize(h, dark, light, rng, grain=0.08):
+    t = np.clip(h, 0, 1)[..., None]
+    c = np.array(dark, np.float32) * (1 - t) + np.array(light, np.float32) * t
+    c *= (1 - grain / 2 + grain * rng.random(h.shape))[..., None]
+    return Image.fromarray(np.clip(c, 0, 255).astype(np.uint8), "RGB")
+
+
+def draw_terrain_layers():
     n = 512
-    rng = np.random.default_rng(7)
-    low = tile_noise(n, 0.012, rng)
-    mid = tile_noise(n, 0.05, rng)
-    high = tile_noise(n, 0.25, rng)
-    dirt = np.array((84, 74, 54), np.float32)
-    dirt_dark = np.array((58, 52, 38), np.float32)
-    moss = np.array((56, 72, 40), np.float32)
-    m = np.clip((low - 0.45) * 3.0, 0, 1)[..., None]
-    base = dirt * (1 - m) + moss * m
-    d = np.clip((mid - 0.5) * 2.5, 0, 1)[..., None]
-    base = base * (1 - d * 0.6) + dirt_dark * d * 0.6
-    base *= (0.86 + 0.28 * high)[..., None]
-    img = Image.fromarray(np.clip(base, 0, 255).astype(np.uint8), "RGB").convert("RGBA")
-    dr = ImageDraw.Draw(img, "RGBA")
-    rnd = random.Random(3)
-    # pebbles (drawn with wrap-around so the tile stays seamless)
-    for _ in range(120):
-        x, y, r = rnd.uniform(0, n), rnd.uniform(0, n), rnd.uniform(1.0, 3.6)
-        g = rnd.randint(78, 115)
-        for ox in (-n, 0, n):
-            for oy in (-n, 0, n):
-                px, py = x + ox, y + oy
-                dr.ellipse([px - r + 1, py - r + 1, px + r + 1, py + r + 1], fill=(20, 18, 12, 110))
-                dr.ellipse([px - r, py - r, px + r, py + r], fill=(g, g - 6, g - 20, 255))
-                dr.ellipse([px - r * 0.6, py - r * 0.7, px, py - r * 0.1], fill=(g + 40, g + 34, g + 20, 160))
-    # cracks
-    for _ in range(5):
-        x, y = rnd.uniform(0, n), rnd.uniform(0, n)
-        a = rnd.uniform(0, math.tau)
-        pts = [(x, y)]
-        for _ in range(rnd.randint(6, 14)):
-            a += rnd.uniform(-0.7, 0.7)
-            x += math.cos(a) * rnd.uniform(5, 12)
-            y += math.sin(a) * rnd.uniform(5, 12)
-            pts.append((x, y))
-        for ox in (-n, 0, n):
-            for oy in (-n, 0, n):
-                dr.line([(px + ox, py + oy) for px, py in pts], fill=(34, 30, 20, 110), width=2)
-    path = OUT / "terrain" / "ground.png"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    img.convert("RGB").save(path)
-    print("wrote", path.relative_to(OUT.parent), img.size)
+    rng = np.random.default_rng(21)
+    # dirt: soft mounds + fine grit + pebbles
+    h = 0.55 * tile_noise(n, 0.02, rng) + 0.3 * tile_noise(n, 0.08, rng) + 0.15 * tile_noise(n, 0.35, rng)
+    peb = np.zeros((n, n), np.float32)
+    yy, xx = np.mgrid[0:n, 0:n]
+    for _ in range(140):
+        cx, cy, r = rng.uniform(0, n), rng.uniform(0, n), rng.uniform(1.5, 5)
+        dx = (xx - cx + n / 2) % n - n / 2
+        dy = (yy - cy + n / 2) % n - n / 2
+        peb = np.maximum(peb, np.clip(1 - (dx * dx + dy * dy) / (r * r), 0, 1) ** 0.5)
+    hd = h + 0.6 * peb
+    save(colorize(h + 0.35 * peb, (70, 56, 40), (150, 126, 96), rng), "terrain/dirt.png")
+    save(normal_from_height(hd, 6.0), "terrain/dirt_n.png")
+    # grass / moss: noisy clumps
+    h = 0.4 * tile_noise(n, 0.05, rng) + 0.6 * tile_noise(n, 0.4, rng)
+    save(colorize(h, (40, 44, 25), (92, 96, 54), rng, 0.15), "terrain/grass.png")
+    save(normal_from_height(h, 4.0), "terrain/grass_n.png")
+    # rock: layered plates with cracks
+    base = 0.6 * tile_noise(n, 0.015, rng) + 0.4 * tile_noise(n, 0.12, rng)
+    strata = np.abs(np.sin(base * 18.0))
+    h = 0.6 * base + 0.4 * strata
+    save(colorize(0.3 + 0.5 * h, (70, 66, 60), (138, 130, 118), rng, 0.05), "terrain/rock.png")
+    save(normal_from_height(h, 5.0), "terrain/rock_n.png")
 
 
 def main():
     draw_metal()
     draw_hazard()
     draw_ribs()
-    draw_ground()
+    draw_terrain_layers()
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ var team := -1
 var amount := 1500
 var radius := 20.0
 var variant := 0
+var selected := false
 
 
 func setup(g) -> void:
@@ -28,10 +29,3 @@ func take(n: int) -> int:
 	if amount <= 0:
 		game.kill(self)
 	return t
-
-
-func _draw() -> void:
-	var tex: Texture2D = game.mineral_texture(variant)
-	var k := 0.6 + 0.4 * amount / 1500.0  # patches shrink as they are mined out
-	var sz: Vector2 = tex.get_size() / game.sprite_res * k
-	draw_texture_rect(tex, Rect2(-sz / 2.0, sz), false)

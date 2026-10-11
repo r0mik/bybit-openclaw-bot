@@ -7,6 +7,7 @@ const BuildingScript = preload("res://scripts/building.gd")
 const MineralScript = preload("res://scripts/mineral.gd")
 const AIScript = preload("res://scripts/ai.gd")
 const HUDScript = preload("res://scripts/hud.gd")
+const ViewScript = preload("res://scripts/view3d.gd")
 
 const MAP_SIZE := Vector2(4000, 3000)
 const CELL := 48.0
@@ -18,8 +19,7 @@ var map_size := MAP_SIZE
 var bank := [50, 50]
 var upgrades := [{"weapons": 0, "armor": 0}, {"weapons": 0, "armor": 0}]
 var entities: Node2D
-var overlay: Node2D
-var camera: Camera2D
+var view  # 3D presentation layer (scripts/view3d.gd)
 var hud
 var ais: Array = []
 var selection: Array = []
@@ -27,40 +27,25 @@ var control_groups := {}
 var last_group_key := -1
 var last_group_time := 0.0
 var dragging := false
-var drag_start := Vector2.ZERO
+var drag_start := Vector2.ZERO  # screen position where the selection box started
 var placing := ""
 var attack_mode := false
-var markers: Array = []
-var effects: Array = []
 var game_over := false
 var elapsed := 0.0
 var win_check := 1.0
 var start_positions := [Vector2(450, 450), Vector2(3550, 2550)]
 var autotest := false
-var building_textures := {}
-var mineral_textures: Array = []
-var unit_textures := {}
-var sprite_meta := {}
-var sprite_res := 2.0
-var sprite_dirs := 16
-var ground_texture: Texture2D
 var report_timer := 0.0
 
 
 func _ready() -> void:
 	randomize()
-	_load_textures()
 	autotest = "--autotest" in OS.get_cmdline_user_args()
-	entities = Node2D.new()
-	entities.y_sort_enabled = true
+	view = ViewScript.new()
+	add_child(view)
+	view.setup(self, [Color(0.27, 0.57, 1.0), Color(0.94, 0.29, 0.23)])
+	entities = Node2D.new()  # logic-only nodes; everything visible lives in the 3D view
 	add_child(entities)
-	overlay = Node2D.new()
-	overlay.z_index = 100
-	add_child(overlay)
-	overlay.draw.connect(_draw_overlay)
-	camera = Camera2D.new()
-	add_child(camera)
-	camera.make_current()
 	_setup_map()
 	hud = HUDScript.new()
 	add_child(hud)
@@ -68,45 +53,8 @@ func _ready() -> void:
 	_add_ai(ENEMY)
 	if autotest:
 		_add_ai(PLAYER)  # AI vs AI to exercise every system
-	camera.position = start_positions[PLAYER] + Vector2(300, 150)
+	view.focus = start_positions[PLAYER] + Vector2(250, 120)
 	show_message("Добывай минералы, строй армию и уничтожь красную базу!")
-
-
-func _load_textures() -> void:
-	sprite_meta = JSON.parse_string(FileAccess.get_file_as_string("res://assets/sprites.json"))
-	sprite_res = float(sprite_meta.res)
-	sprite_dirs = int(sprite_meta.dirs)
-	for kind in Defs.UNITS:
-		for t in [PLAYER, ENEMY]:
-			unit_textures["%s_%d" % [kind, t]] = load("res://assets/units/%s_%d.png" % [kind, t])
-	for kind in Defs.BUILDINGS:
-		for t in [PLAYER, ENEMY]:
-			building_textures["%s_%d" % [kind, t]] = load("res://assets/buildings/%s_%d.png" % [kind, t])
-	for v in 3:
-		mineral_textures.append(load("res://assets/minerals/minerals_%d.png" % v))
-	ground_texture = load("res://assets/terrain/ground.png")
-	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-
-
-func building_texture(kind: String, t: int) -> Texture2D:
-	return building_textures["%s_%d" % [kind, t]]
-
-
-func unit_texture(kind: String, t: int) -> Texture2D:
-	return unit_textures["%s_%d" % [kind, t]]
-
-
-## Height of the sprite above the ground anchor, in game pixels.
-func unit_top(kind: String) -> float:
-	return float(sprite_meta.units[kind].top)
-
-
-func building_top(kind: String) -> float:
-	return float(sprite_meta.buildings[kind].top)
-
-
-func mineral_texture(v: int) -> Texture2D:
-	return mineral_textures[v]
 
 
 func _add_ai(t: int) -> void:
@@ -145,6 +93,7 @@ func spawn_unit(t: int, kind: String, pos: Vector2):
 	u.position = pos
 	u.setup(self, t, kind)
 	entities.add_child(u)
+	view.add_entity(u)
 	return u
 
 
@@ -153,6 +102,7 @@ func spawn_building(t: int, kind: String, pos: Vector2, constructing: bool):
 	b.position = pos
 	b.setup(self, t, kind, constructing)
 	entities.add_child(b)
+	view.add_entity(b)
 	return b
 
 
@@ -161,6 +111,7 @@ func spawn_mineral(pos: Vector2):
 	m.position = pos
 	m.setup(self)
 	entities.add_child(m)
+	view.add_entity(m)
 	return m
 
 
@@ -257,16 +208,13 @@ func find_enemy(u, radius: float):
 	return best
 
 
+## Entity at a logic (ground) point. Mouse picking goes through view.pick() instead.
 func entity_at(p: Vector2):
-	# Sprites stand up from their ground anchor, so also test the body, not only the feet.
 	for u in get_tree().get_nodes_in_group("units"):
-		if not u.is_alive():
-			continue
-		var body: Vector2 = u.position + Vector2(0, -unit_top(u.kind) * 0.5)
-		if p.distance_to(u.position) <= u.radius + 4.0 or p.distance_to(body) <= u.radius + 4.0:
+		if u.is_alive() and p.distance_to(u.position) <= u.radius + 4.0:
 			return u
 	for b in get_tree().get_nodes_in_group("buildings"):
-		if b.is_alive() and b.pick_rect().has_point(p):
+		if b.is_alive() and b.rect().has_point(p):
 			return b
 	for m in get_tree().get_nodes_in_group("minerals"):
 		if m.is_alive() and p.distance_to(m.position) <= m.radius + 4.0:
@@ -455,19 +403,19 @@ func scaled_damage(attacker, target, dmg: float) -> float:
 func deal_damage(attacker, target, dmg: float, splash: float) -> void:
 	if splash > 0.0:
 		var center: Vector2 = target.position
-		effects.append({"pos": center, "t": 0.0, "r": splash, "color": Color(1.0, 0.6, 0.2)})
+		view.fx_shot(attacker, target, true)
 		var all: Array = get_tree().get_nodes_in_group("units") + get_tree().get_nodes_in_group("buildings")
 		for e in all:
 			if e.team != attacker.team and e.is_alive() and attacker.can_target(e) and e.surface_distance(center) <= splash:
 				e.take_damage(scaled_damage(attacker, e, dmg if e == target else dmg * 0.5), attacker)
 	else:
+		view.fx_shot(attacker, target, false)
 		target.take_damage(scaled_damage(attacker, target, dmg), attacker)
 
 
 func kill(e) -> void:
-	var big: bool = e.is_in_group("buildings")
-	if not e.is_in_group("minerals"):
-		effects.append({"pos": e.position, "t": 0.0, "r": 80.0 if big else 26.0, "color": Color(1.0, 0.45, 0.1)})
+	view.fx_death(e)
+	view.remove_entity(e)
 	selection.erase(e)
 	for k in control_groups:
 		control_groups[k].erase(e)
@@ -616,7 +564,7 @@ func issue_move(units: Array, p: Vector2, attack := false) -> void:
 			units[i].order_move(p + off)
 
 
-func _right_click(p: Vector2) -> void:
+func _right_click(p: Vector2, picked = null) -> void:
 	var units := selected_units()
 	if units.is_empty():
 		var blds := selected_buildings()
@@ -626,7 +574,7 @@ func _right_click(p: Vector2) -> void:
 		if not blds.is_empty():
 			add_marker(p, Color(1.0, 0.9, 0.3))
 		return
-	var t = entity_at(p)
+	var t = picked if picked != null else entity_at(p)
 	if t != null and t.is_in_group("minerals"):
 		var others := []
 		for u in units:
@@ -664,7 +612,7 @@ func minimap_command(wp: Vector2) -> void:
 
 
 func add_marker(p: Vector2, c: Color) -> void:
-	markers.append({"pos": p, "t": 0.0, "color": c})
+	view.fx_marker(p, c)
 
 
 func show_message(text: String) -> void:
@@ -678,7 +626,8 @@ func show_message(text: String) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
-		var wp := get_global_mouse_position()
+		var sp: Vector2 = event.position
+		var wp: Vector2 = view.screen_to_ground(sp)
 		match event.button_index:
 			MOUSE_BUTTON_LEFT:
 				if event.pressed:
@@ -686,7 +635,7 @@ func _unhandled_input(event: InputEvent) -> void:
 						_try_place(wp, event.shift_pressed)
 					elif attack_mode:
 						var units := selected_units()
-						var t = entity_at(wp)
+						var t = view.pick(sp)
 						if t != null and t.team >= 0 and t.team != PLAYER:
 							for u in units:
 								u.order_attack(t)
@@ -696,23 +645,26 @@ func _unhandled_input(event: InputEvent) -> void:
 						attack_mode = false
 					else:
 						dragging = true
-						drag_start = wp
+						drag_start = sp
 				elif dragging:
 					dragging = false
-					_finish_selection(drag_start, wp, event.shift_pressed)
+					_finish_selection(drag_start, sp, event.shift_pressed)
 			MOUSE_BUTTON_RIGHT:
 				if event.pressed:
 					if placing != "" or attack_mode:
 						placing = ""
 						attack_mode = false
 					elif not game_over:
-						_right_click(wp)
+						_right_click(wp, view.pick(sp))
 			MOUSE_BUTTON_WHEEL_UP:
-				camera.zoom = (camera.zoom * 1.1).clamp(Vector2(0.4, 0.4), Vector2(1.6, 1.6))
+				if event.pressed:
+					view.zoom(1.0 / 1.12)
 			MOUSE_BUTTON_WHEEL_DOWN:
-				camera.zoom = (camera.zoom / 1.1).clamp(Vector2(0.4, 0.4), Vector2(1.6, 1.6))
+				if event.pressed:
+					view.zoom(1.12)
 	elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_MIDDLE:
-		camera.position -= event.relative / camera.zoom
+		var before: Vector2 = view.screen_to_ground(event.position - event.relative)
+		view.focus += before - view.screen_to_ground(event.position)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		_handle_key(event)
 
@@ -735,12 +687,12 @@ func _handle_key(event: InputEventKey) -> void:
 			set_selection(control_groups[n])
 			var now := Time.get_ticks_msec() / 1000.0
 			if last_group_key == n and now - last_group_time < 0.4 and not selection.is_empty():
-				camera.position = selection[0].position
+				view.focus = selection[0].position
 			last_group_key = n
 			last_group_time = now
 		return
 	if key == KEY_SPACE:
-		camera.position = start_positions[PLAYER]
+		view.focus = start_positions[PLAYER]
 		return
 	for c in get_commands():
 		if c.key == key:
@@ -749,20 +701,16 @@ func _handle_key(event: InputEventKey) -> void:
 
 
 func _finish_selection(a: Vector2, b: Vector2, add: bool) -> void:
-	var r := Rect2(a, Vector2.ZERO).expand(b)
+	var r := Rect2(a, Vector2.ZERO).expand(b)  # screen space
 	var picked := []
-	if r.size.length() < 8.0 / camera.zoom.x:
-		var e = entity_at(b)
+	if r.size.length() < 8.0:
+		var e = view.pick(b)
 		if e != null and e.team >= 0:
 			picked = [e]
 	else:
-		for u in team_units(PLAYER):
-			if r.grow(u.radius).has_point(u.position):
-				picked.append(u)
+		picked = view.units_in_rect(r, PLAYER)
 		if picked.is_empty():
-			for bl in team_buildings(PLAYER):
-				if r.intersects(bl.pick_rect()):
-					picked.append(bl)
+			picked = view.buildings_in_rect(r, PLAYER)
 	if add:
 		var s := selection.filter(func(e): return valid(e) and e.team == PLAYER)
 		for p in picked:
@@ -785,14 +733,7 @@ func _process(delta: float) -> void:
 	_resolve_collisions()
 	if dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		dragging = false
-		_finish_selection(drag_start, get_global_mouse_position(), Input.is_key_pressed(KEY_SHIFT))
-	for m in markers:
-		m.t += delta
-	markers = markers.filter(func(m): return m.t < 0.6)
-	for e in effects:
-		e.t += delta
-	effects = effects.filter(func(e): return e.t < 0.45)
-	overlay.queue_redraw()
+		_finish_selection(drag_start, get_viewport().get_mouse_position(), Input.is_key_pressed(KEY_SHIFT))
 	win_check -= delta
 	if win_check <= 0.0 and not game_over:
 		win_check = 1.0
@@ -835,7 +776,7 @@ func _autotest_screenshot() -> void:
 			set_meta("shot_done", true)
 			var army := team_units(PLAYER).filter(func(u): return not u.is_worker())
 			set_selection(army)
-			camera.position = start_positions[PLAYER] + Vector2(350, 200)
+			view.focus = start_positions[PLAYER] + Vector2(350, 200)
 			await get_tree().process_frame
 			await get_tree().process_frame
 			get_viewport().get_texture().get_image().save_png(arg.trim_prefix("--screenshot="))
@@ -857,8 +798,8 @@ func _update_camera(delta: float) -> void:
 			if mp.x > vs.x - edge: dir.x += 1
 			if mp.y < edge: dir.y -= 1
 			if mp.y > vs.y - edge: dir.y += 1
-	camera.position += dir.normalized() * 1100.0 * delta / camera.zoom.x
-	camera.position = camera.position.clamp(Vector2.ZERO, MAP_SIZE)
+	view.focus += dir.normalized() * 14.0 * view.dist * delta
+	view.focus = view.focus.clamp(Vector2.ZERO, MAP_SIZE)
 
 
 func _resolve_collisions() -> void:
@@ -919,48 +860,3 @@ func _resolve_collisions() -> void:
 				var n := diff / d if d > 0.01 else Vector2.DOWN
 				u.position = mn.position + n * min_d
 		u.position = u.position.clamp(Vector2(10, 10), MAP_SIZE - Vector2(10, 10))
-
-
-# --- Drawing ----------------------------------------------------------------
-
-func _draw() -> void:
-	draw_texture_rect(ground_texture, Rect2(Vector2.ZERO, MAP_SIZE), true)
-	draw_rect(Rect2(Vector2.ZERO, MAP_SIZE), Color(0.5, 0.5, 0.45), false, 4.0)
-
-
-func _draw_overlay() -> void:
-	var mp := get_global_mouse_position()
-	for u in selected_units():
-		if u.state == UnitScript.State.MOVE or u.state == UnitScript.State.ATTACK_MOVE:
-			var c := Color(0.3, 1.0, 0.3, 0.25) if u.state == UnitScript.State.MOVE else Color(1.0, 0.3, 0.2, 0.25)
-			overlay.draw_line(u.position, u.target_pos, c, 1.0)
-	for b in selected_buildings():
-		if b.has_rally:
-			overlay.draw_line(b.position, b.rally, Color(1.0, 0.9, 0.3, 0.5), 1.5)
-			overlay.draw_circle(b.rally, 5.0, Color(1.0, 0.9, 0.3, 0.8))
-	if dragging:
-		var r := Rect2(drag_start, Vector2.ZERO).expand(mp)
-		overlay.draw_rect(r, Color(0.3, 1.0, 0.3, 0.12), true)
-		overlay.draw_rect(r, Color(0.3, 1.0, 0.3, 0.9), false, 1.5)
-	if placing != "":
-		var size: Vector2 = Defs.BUILDINGS[placing].size
-		var p := snap(mp)
-		var ok := can_place(placing, p)
-		var c := Color(0.2, 1.0, 0.2, 0.35) if ok else Color(1.0, 0.2, 0.2, 0.35)
-		overlay.draw_rect(Rect2(p - size / 2.0, size), c, true)
-		var tex := building_texture(placing, PLAYER)
-		var ts := tex.get_size() / sprite_res
-		overlay.draw_texture_rect(tex, Rect2(p - ts / 2.0, ts), false,
-				Color(0.7, 1.0, 0.7, 0.6) if ok else Color(1.0, 0.5, 0.5, 0.6))
-		overlay.draw_rect(Rect2(p - size / 2.0, size), Color(c, 0.9), false, 2.0)
-	if attack_mode:
-		var c := Color(1.0, 0.25, 0.2)
-		overlay.draw_arc(mp, 12.0, 0.0, TAU, 24, c, 2.0)
-		overlay.draw_line(mp + Vector2(-18, 0), mp + Vector2(18, 0), c, 1.5)
-		overlay.draw_line(mp + Vector2(0, -18), mp + Vector2(0, 18), c, 1.5)
-	for m in markers:
-		var k: float = 1.0 - m.t / 0.6
-		overlay.draw_arc(m.pos, 4.0 + 14.0 * k, 0.0, TAU, 24, Color(m.color, k), 2.0)
-	for e in effects:
-		var k: float = e.t / 0.45
-		overlay.draw_circle(e.pos, e.r * (0.3 + 0.7 * k), Color(e.color, 0.6 * (1.0 - k)))

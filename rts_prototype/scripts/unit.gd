@@ -183,7 +183,6 @@ func _process(delta: float) -> void:
 			_do_return(delta)
 		State.BUILD:
 			_do_build(delta)
-	queue_redraw()
 
 
 func _do_idle(delta: float) -> void:
@@ -304,32 +303,3 @@ func _move_to(p: Vector2, delta: float, arrive: float) -> bool:
 	position += dir * step
 	facing = dir.angle()
 	return false
-
-
-# --- Drawing ----------------------------------------------------------------
-
-func _draw() -> void:
-	var tex: Texture2D = game.unit_texture(kind, team)
-	var fs := float(tex.get_height())             # frame size in texture pixels
-	var dirs: int = game.sprite_dirs
-	var gs: float = fs / game.sprite_res                # frame size in game pixels
-	var top: float = game.unit_top(kind)
-	var dir := Vector2.RIGHT.rotated(facing)
-	if selected:  # selection ellipse on the ground, under the sprite
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 0.6))
-		draw_arc(Vector2.ZERO, radius + 4.0, 0.0, TAU, 32, Color(0.3, 1.0, 0.3), 2.0)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	var idx := int(round(fposmod(facing, TAU) / TAU * dirs)) % dirs
-	draw_texture_rect_region(tex, Rect2(-gs / 2.0, -gs / 2.0, gs, gs), Rect2(idx * fs, 0.0, fs, fs))
-	if carrying > 0:
-		draw_circle(Vector2(0, -top - 3.0), 3.5, Color(0.4, 0.9, 1.0))
-	if shot_flash > 0.0:
-		var muzzle := dir * (radius + 4.0) + Vector2(0, -top * 0.55)
-		draw_line(muzzle, to_local(shot_to) + Vector2(0, -6.0), Color(1.0, 0.95, 0.5), 2.0)
-		draw_circle(muzzle, 3.0, Color(1.0, 0.9, 0.4, 0.9))
-	if selected or hp < max_hp:
-		var w := radius * 2.4
-		var y := -top - 9.0
-		var f := clampf(hp / max_hp, 0.0, 1.0)
-		draw_rect(Rect2(-w / 2.0, y, w, 4.0), Color(0, 0, 0, 0.7))
-		draw_rect(Rect2(-w / 2.0, y, w * f, 4.0), Color(1.0 - f, f, 0.15))

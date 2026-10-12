@@ -451,6 +451,9 @@ func add_entity(e) -> void:
 				root.add_child(holo)
 	model.name = "Model"
 	root.add_child(model)
+	var anims := []
+	_collect_anims(model, anims)
+	root.set_meta("anims", anims)
 	var kind: String = "minerals" if e.is_in_group("minerals") else e.kind
 	_height_of(kind, model)
 	var friendly: bool = e.team == 0
@@ -462,6 +465,30 @@ func add_entity(e) -> void:
 	add_child(root)
 	views[e] = root
 	_sync(e, root, 1.0)
+
+
+func _collect_anims(n: Node, out: Array) -> void:
+	if n is Node3D and n.has_meta("anim"):
+		out.append({"node": n, "kind": n.get_meta("anim"), "speed": n.get_meta("speed"), "scale": n.scale,
+				"phase": randf() * TAU})
+	for c in n.get_children():
+		_collect_anims(c, out)
+
+
+## Spinning radars / holograms, pulsing energy cores, and defence turrets tracking their target.
+func _animate_building(e, root: Node3D, model: Node3D, delta: float) -> void:
+	for a in root.get_meta("anims", []):
+		var n: Node3D = a.node
+		if a.kind == "spin":
+			n.rotation.y += delta * a.speed
+		else:
+			n.scale = a.scale * (1.0 + 0.12 * sin(time * a.speed * 2.0 + a.phase))
+	var tur: Node3D = model.get_node_or_null("Turret")
+	if tur:
+		if game.valid(e.target):
+			tur.rotation.y = lerp_angle(tur.rotation.y, -(e.target.position - e.position).angle(), minf(1.0, delta * 6.0))
+		else:
+			tur.rotation.y += delta * 0.4
 
 
 func remove_entity(e) -> void:
@@ -536,6 +563,7 @@ func _sync(e, root: Node3D, delta: float) -> void:
 				_burst(p3 + off, 8, _spark_ramp, _additive, 4.0, 0.25, 0.4, Vector3(0, -8, 0))
 		else:
 			model.scale = Vector3.ONE
+			_animate_building(e, root, model, delta)
 			if holo:
 				holo.queue_free()
 			if e.hp < e.max_hp * 0.6 and not root.has_meta("fire"):

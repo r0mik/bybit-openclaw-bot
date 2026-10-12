@@ -20,6 +20,8 @@
 Пересборка текстур и экспорт моделей: `GODOT=/путь/к/godot tools/build_assets.sh` (нужны Python 3, Pillow, numpy).
 
 ## Запуск
+Подробная пошаговая инструкция — [HOW_TO_RUN.md](HOW_TO_RUN.md).
+
 1. Установите **Godot 4.3+** (обычная версия, не .NET).
 2. Godot → *Import* → выберите `rts_prototype/project.godot` → **F5**.
 

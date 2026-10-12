@@ -7,8 +7,11 @@
 | Система | Архив | Что запускать |
 |---|---|---|
 | Windows 10/11 (64-бит) | `MiniCraft_Windows.zip` | `MiniCraft.exe` — двойной клик |
-| macOS 10.12+ (Intel и Apple M1/M2/M3) | `MiniCraft_macOS.zip` | `Mini Craft - RTS Prototype.app` |
+| macOS на Apple M1/M2/M3/M4 | `MiniCraft_macOS_arm64.zip` | `Mini Craft - RTS Prototype.app` |
+| macOS на Intel | `MiniCraft_macOS_x86_64.zip` | `Mini Craft - RTS Prototype.app` |
 | Linux (x86_64) | `MiniCraft_Linux.zip` | `MiniCraft.x86_64` (в терминале: `chmod +x MiniCraft.x86_64 && ./MiniCraft.x86_64`) |
+
+Какой у вас Mac — видно в меню  → «Об этом Mac» (строка «Чип» или «Процессор»).
 
 Игра — это один файл, внутри уже всё: графика, карта, ИИ. Установка не требуется.
 
